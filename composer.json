@@ -1,0 +1,79 @@
+{
+    "name": "core45/h-captcha",
+    "description": "hCaptcha for Laravel: typed verifier with single-use token memoization, Blade component, Livewire and Filament fields, validation rule, middleware, and a database audit trail.",
+    "keywords": [
+        "laravel",
+        "hcaptcha",
+        "h-captcha",
+        "captcha",
+        "spam",
+        "bot-protection"
+    ],
+    "homepage": "https://github.com/core45/h-captcha",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "core45",
+            "homepage": "https://core45.com"
+        }
+    ],
+    "require": {
+        "php": "^8.4",
+        "illuminate/contracts": "^12.0|^13.0",
+        "illuminate/database": "^12.0|^13.0",
+        "illuminate/http": "^12.0|^13.0",
+        "illuminate/support": "^12.0|^13.0",
+        "illuminate/validation": "^12.0|^13.0",
+        "illuminate/view": "^12.0|^13.0"
+    },
+    "require-dev": {
+        "filament/filament": "^5.7.6",
+        "larastan/larastan": "^3.8",
+        "laravel/pint": "^1.30.5",
+        "livewire/livewire": "^3.6|^4.1",
+        "orchestra/testbench": "^9.0|^10.0|^11.2",
+        "pestphp/pest": "^5.1.1",
+        "pestphp/pest-plugin-laravel": "^5.0.1",
+        "pestphp/pest-plugin-rector": "^5.0.3",
+        "phpunit/phpunit": "^13.3.0",
+        "rector/rector": "^2.6.2"
+    },
+    "suggest": {
+        "filament/filament": "Use the HCaptcha Filament form field in panels and forms.",
+        "livewire/livewire": "Automatic widget reset after a Livewire DOM patch."
+    },
+    "autoload": {
+        "psr-4": {
+            "Core45\\HCaptcha\\": "src"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Core45\\HCaptcha\\Tests\\": "tests"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Core45\\HCaptcha\\HCaptchaServiceProvider"
+            ],
+            "aliases": {
+                "HCaptcha": "Core45\\HCaptcha\\Facades\\HCaptcha"
+            }
+        }
+    },
+    "scripts": {
+        "lint": "pint",
+        "stan": "phpstan analyse",
+        "test": "pest"
+    },
+    "config": {
+        "sort-packages": true,
+        "allow-plugins": {
+            "pestphp/pest-plugin": true,
+            "phpstan/extension-installer": true
+        }
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}
