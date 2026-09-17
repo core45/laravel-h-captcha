@@ -1,16 +1,30 @@
 # core45/laravel-h-captcha
 
-hCaptcha for Laravel: a typed verifier, a Blade widget, a Livewire-aware explicit-render script, a Filament form field, a validation rule, route middleware, and an optional database audit trail. It uses Laravel's own `Http` client, not Guzzle directly.
+**Privacy-friendly captcha for Laravel, in one line of Blade.**
 
-## Why this exists
+```blade
+<x-hcaptcha />
+```
 
-`buzz/laravel-h-captcha` pins `guzzlehttp/guzzle` `6.*|7.*`. It cannot be installed alongside Guzzle 8, which is what current Laravel projects use. Rather than downgrade Guzzle for an unmaintained wrapper, this package talks to hCaptcha through Laravel's `Http` facade, so it has no Guzzle version constraint of its own.
+```php
+$request->validate([
+    'h-captcha-response' => [new HCaptcha],
+]);
+```
 
-The other problem it solves is more subtle. **hCaptcha tokens are single-use.** A form can be guarded by more than one entry point at once — a validation rule and route middleware, or a Filament field that validates on update and again on submit — and if each one calls `siteverify` independently, the first call spends the token and every later call gets back `token-already-used`. The visitor sees a bogus failure they did nothing to cause.
+That is a working, spam-protected form. Everything else is optional.
 
-The fix is one `Verifier` implementation (`Core45\HCaptcha\Support\HttpVerifier`) that every entry point routes through, memoizing the verdict per request by `hash('sha256', $token)` **and** a scope. The rule, the middleware, the Blade component's field, and the Filament field are all thin callers of the same verifier — the token is spent exactly once per field, no matter how many places check that field.
+### Highlights
 
-The scope exists because the memoization is a safety mechanism, not a cache. `Verifier::verify()` takes a third parameter, `verify(?string $token, ?string $clientIp = null, ?string $scope = null)` — the validated attribute (for the rule) or the field name (for the middleware). Keyed on the token alone, one solved captcha would authorise every consumer of it in the request, and Livewire processes up to 200 components in a single HTTP request with nothing flushing scoped container bindings between them — an unscoped memo would let a captcha solved for one field silently pass for every other field in that batch. Two checks of the *same* field (the rule and the middleware guarding it) still collapse to one HTTP call; two *different* fields do not, and the second one hits hCaptcha for real.
+- **Every integration you need, one implementation.** A Blade component, a validation rule, route middleware, and a Filament form field — all routing through the same verifier, so they behave identically.
+- **Livewire and modals just work.** Widgets render in hCaptcha's explicit mode and re-render themselves after a DOM patch, so a captcha inside a Livewire component, or in a modal opened later, is never a blank box.
+- **Safe to stack.** hCaptcha tokens are single-use, so guarding one form with both the rule and the middleware would normally spend the token twice and show the visitor a failure they did nothing to cause. Here the verdict is remembered per field, so the token is spent once no matter how many guards check it.
+- **Secure by default rather than by configuration.** It fails closed during an outage, rejects tokens solved on someone else's site, refuses a malformed response, and never stores a raw token.
+- **No Guzzle pin.** It uses Laravel's own `Http` client, so it never argues with your other dependencies about a Guzzle major version.
+- **Drop-in for `thinhbuzz/laravel-h-captcha`.** Same `.env` keys, same `Captcha` facade, same `captcha` rule — swap the package and keep your code. See [Migrating](#migrating-from-thinhbuzzlaravel-h-captcha).
+- **22 languages**, a typed result object for when you want to know *why* a token failed, and an optional audit trail with a retention command.
+
+Requires PHP 8.4 and Laravel 12 or 13.
 
 ## Installation
 
