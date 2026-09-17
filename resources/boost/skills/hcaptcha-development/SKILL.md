@@ -1,6 +1,6 @@
 ---
 name: hcaptcha-development
-description: Build and work with core45/h-captcha features including the Blade widget, validation rule, middleware, Livewire resets, the Filament form field, manual verification, and the verification audit trail.
+description: Build and work with core45/laravel-h-captcha features including the Blade widget, validation rule, middleware, Livewire resets, the Filament form field, manual verification, and the verification audit trail.
 license: MIT
 metadata:
   author: core45
@@ -9,15 +9,16 @@ metadata:
 # hCaptcha Development
 
 ## Overview
-Use core45/h-captcha to add hCaptcha to a Laravel app. It uses Laravel's `Http` client instead of Guzzle directly, provides a Blade widget with a Livewire-aware explicit render mode, a validation rule object, route middleware, a Filament form field, and an optional database audit trail.
+Use core45/laravel-h-captcha to add hCaptcha to a Laravel app. It uses Laravel's `Http` client instead of Guzzle directly, provides a Blade widget with a Livewire-aware explicit render mode, a validation rule object, route middleware, a Filament form field, and an optional database audit trail.
 
 ## When to Activate
 - Activate when adding or configuring an hCaptcha widget, validating a captcha token, or protecting a route/form/Filament schema against spam with hCaptcha.
 - Activate when code references `<x-hcaptcha`, `Core45\HCaptcha\Rules\HCaptcha`, the `hcaptcha`/`captcha` validation rules, the `hcaptcha` middleware alias, `Core45\HCaptcha\Filament\Forms\Components\HCaptcha`, the `HCaptcha` facade, `HCaptchaVerification`, or `hcaptcha:prune`.
 - Activate when debugging a captcha that shows `token-already-used` on a form that has more than one verification entry point (rule + middleware, or a Filament field validating twice).
+- Activate when migrating an application off `thinhbuzz/laravel-h-captcha` (its `Captcha` facade, `CAPTCHA_*` env keys, or a published `config/captcha.php`).
 
 ## Scope
-- In scope: widget rendering and attributes, validation (rule object and string rules), middleware, Livewire integration and widget resets, the Filament field, manual `verify()` calls, the audit trail and pruning, translations, testing with `Http::fake()`.
+- In scope: widget rendering and attributes, validation (rule object and string rules), middleware, Livewire integration and widget resets, the Filament field, manual `verify()` calls, the audit trail and pruning, translations, testing with `Http::fake()`, migrating from `thinhbuzz/laravel-h-captcha`.
 - Out of scope: writing a captcha solution from scratch, other captcha providers (reCAPTCHA, Turnstile), non-Laravel frameworks.
 
 ## Workflow
@@ -40,7 +41,7 @@ A sitekey is not secret; it is in the page HTML. An attacker can embed it on the
 
 ### Setup
 ```bash
-composer require core45/h-captcha
+composer require core45/laravel-h-captcha
 php artisan vendor:publish --tag=hcaptcha-config
 ```
 Set `HCAPTCHA_SITEKEY` and `HCAPTCHA_SECRET`. Only publish `hcaptcha-migrations` and run `php artisan migrate` if the audit trail (`HCAPTCHA_LOGGING=true`) is wanted.
@@ -80,6 +81,9 @@ Calls `->markAsRequired()` (asterisk only, not a `required()` rule — the `HCap
 
 ### Audit trail
 Enable with `HCAPTCHA_LOGGING=true`, migrate, and schedule `php artisan hcaptcha:prune`. The raw token is never stored, only its SHA-256 hash.
+
+### Migrating from thinhbuzz/laravel-h-captcha
+`composer remove buzz/laravel-h-captcha && composer require core45/laravel-h-captcha` — no application code changes. The `Captcha` facade, `CAPTCHA_SECRET`/`CAPTCHA_SITEKEY`, a published `config/captcha.php`, and the `captcha` rule all keep working via a compat layer in `Core45\HCaptcha\Compat\`. `http_client` is ignored (that's the whole reason this package exists), and the old placeholder defaults (`default_secret`/`default_sitekey`) now throw instead of silently failing every verification. The one thing likely to break on swap: `hostnames` is on by default here and the old package had no such check — set `HCAPTCHA_HOSTNAMES` before going live if the form is served off a host other than `APP_URL`. See `references/hcaptcha-guide.md#migrating-from-thinhbuzzlaravel-h-captcha` for the full comparison.
 
 ## Do and Don't
 

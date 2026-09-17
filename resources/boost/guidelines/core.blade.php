@@ -1,10 +1,10 @@
 {{-- Laravel h-captcha Guidelines for AI Code Assistants --}}
-{{-- Source: https://github.com/core45/h-captcha --}}
+{{-- Source: https://github.com/core45/laravel-h-captcha --}}
 {{-- License: MIT | (c) core45 --}}
 
 ## hCaptcha
 
-- `core45/h-captcha` provides hCaptcha for Laravel using the `Http` client (no Guzzle constraint), with a single memoizing verifier so a single-use token is never spent twice by the rule, the middleware, and the Filament field checking it independently. Memoization is keyed on `(token, scope)`, not just the token, so it never lets a captcha solved for one field silently pass for another.
+- `core45/laravel-h-captcha` provides hCaptcha for Laravel using the `Http` client (no Guzzle constraint), with a single memoizing verifier so a single-use token is never spent twice by the rule, the middleware, and the Filament field checking it independently. Memoization is keyed on `(token, scope)`, not just the token, so it never lets a captcha solved for one field silently pass for another.
 - Key features: the `<x-hcaptcha />` Blade component, which always renders in hCaptcha's explicit mode (there is no auto mode), the `Core45\HCaptcha\Rules\HCaptcha` validation rule (and `hcaptcha`/`captcha` string rules), the `hcaptcha` route middleware alias, a `Core45\HCaptcha\Filament\Forms\Components\HCaptcha` Filament field, and an optional database audit trail with a `hcaptcha:prune` command.
 - Never pair `new \Core45\HCaptcha\Rules\HCaptcha` with a `required` rule — the rule is implicit and already reports the correct "please complete the captcha" message; adding `required` lets Laravel's generic message win instead.
 - Verify tokens via the `HCaptcha` facade (`Core45\HCaptcha\Facades\HCaptcha::verify($token, $ip)`), never by calling hCaptcha's `siteverify` endpoint directly.

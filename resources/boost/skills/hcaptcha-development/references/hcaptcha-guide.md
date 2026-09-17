@@ -1,12 +1,12 @@
 # hCaptcha Development Guide
 
-Long-form reference for `core45/h-captcha`. See the package README for the quick-start version; this
+Long-form reference for `core45/laravel-h-captcha`. See the package README for the quick-start version; this
 goes deeper on failure modes and the error-code list.
 
 ## Setup
 
 ```bash
-composer require core45/h-captcha
+composer require core45/laravel-h-captcha
 php artisan vendor:publish --tag=hcaptcha-config
 ```
 
@@ -34,6 +34,85 @@ Both `sitekey` and `secret` default to `null`. This is deliberate: a missing sec
 throws `MissingSitekeyException` when something asks for one directly — rather than either silently
 rejecting every visitor (a placeholder default would do this) or rendering a broken widget with no
 indication why. `HCaptchaManager::configured()` lets a view check first and degrade instead.
+
+## Migrating from thinhbuzz/laravel-h-captcha
+
+```bash
+composer remove buzz/laravel-h-captcha
+composer require core45/laravel-h-captcha
+```
+
+No application code needs to change for the swap itself. A compatibility layer, isolated in
+`Core45\HCaptcha\Compat\`, reproduces the old package's `Captcha` facade and container binding on
+top of the native `HCaptchaManager` and `Verifier` — the old surface is a thin caller of the same
+code every native entry point uses, not a second implementation.
+
+### What keeps working unchanged
+
+- The env keys `CAPTCHA_SECRET` and `CAPTCHA_SITEKEY`. Precedence is `HCAPTCHA_*` over `CAPTCHA_*`,
+  so a project that has migrated part of its `.env` is not silently overridden by a stale key it
+  forgot to delete.
+- A previously published `config/captcha.php`. Its `secret`, `sitekey`, `options.lang`, and
+  `attributes` values are adopted into the equivalent `hcaptcha.*` key wherever that key is itself
+  unset. A configured `hcaptcha.*` value always wins over the legacy config — this is a fallback,
+  not an override.
+- The `Captcha` facade (container binding `'captcha'`, alias `Captcha`), with all eight methods the
+  old package exposed: `display()`, `displayMultiple()`, `displayJs()`, `multiple()`,
+  `setOptions()`, `verify()`, `getWidgetIdName()`, `getJsVariableName()`.
+- `Captcha::verify($response, $clientIp = null, $options = [])` returns a plain **bool**, exactly as
+  the old package did, because old call sites write `if (Captcha::verify(...))`. Reach for the
+  native `HCaptcha::verify()` (see [Manual verification](#manual-verification)) when the caller
+  needs to know *why* a token failed, not just whether it passed — it returns the full
+  `VerificationResult`.
+- The `captcha` string validation rule — registered as an alias of this package's own `hcaptcha`
+  string rule, so it resolves the same translated message keys via
+  `VerificationResult::messageKey()`.
+- The `Form::captcha()` macro, registered only when the container has a `form` binding, exactly like
+  the old provider guarded it.
+
+### What is different, and why
+
+- **`http_client` is ignored.** The old config named a Guzzle-based HTTP client class. Replacing
+  Guzzle with Laravel's own `Http` client is the entire reason this package exists — see
+  [Why this exists](#why-this-exists) in the README: `buzz/laravel-h-captcha` pins
+  `guzzlehttp/guzzle 6.*|7.*` and cannot install alongside Guzzle 8. A configured `http_client` logs
+  a warning and is otherwise skipped; it never fails the boot.
+- **The old placeholder defaults now throw.** The reference package's config defaulted `secret` and
+  `sitekey` to the literal strings `default_secret` and `default_sitekey`. A half-configured install
+  therefore carried those literals into every `siteverify` call and every verification failed with
+  no indication why — the visitor just saw a rejected captcha. This package treats those two
+  literals as **not configured** and raises `MissingSecretException` / `MissingSitekeyException`
+  instead, which is loud where the old behaviour was silent.
+- **`multiple` mode needs no emulation.** Every widget in this package already renders in hCaptcha's
+  explicit mode, and the bootstrap script's `renderAll()` picks up every `[data-hcaptcha-explicit]`
+  container on the page, so several widgets on one page already work without any special mode.
+  `displayMultiple()` exists purely so an old call site does not fatal or double-render; it returns
+  an empty string.
+- **`verify()` no longer swallows every failure into an unexplained `false`.** Underneath the bool,
+  the native layer distinguishes a missing token, an already-spent token, an unreachable hCaptcha
+  endpoint, and an outright rejection (see
+  [Failure modes and error codes](#failure-modes-and-error-codes)), and fails **closed** on a
+  transport error unless `HCAPTCHA_FAIL_OPEN=true` is set — see
+  [Fail-open vs fail-closed](#fail-open-vs-fail-closed) in the README.
+
+### The hostname check is the most likely migration surprise
+
+`hostnames` is **on by default** in this package (see
+[Your sitekey is public](#the-hostname-check-matters) above), derived from `APP_URL`. The old
+package had no equivalent check. If the migrated form is served from a host other than `APP_URL` —
+a staging subdomain, a second brand on the same install, a reverse proxy — genuine submissions will
+start failing with `hostname-mismatch` immediately after the swap, with no code change to point to.
+Set `HCAPTCHA_HOSTNAMES` to a comma-separated list of every hostname the form is legitimately served
+from before going live with the migration.
+
+### Recommended follow-up after migrating
+
+- Switch call sites to `<x-hcaptcha />` and the `HCaptcha` rule object — better per-outcome error
+  messages than the compat layer's single bool.
+- Move `.env` keys from `CAPTCHA_*` to `HCAPTCHA_*`.
+- Delete `config/captcha.php` once nothing reads it.
+- Add `throttle` to the route the captcha guards (see [Rate limiting](#rate-limiting) in the
+  README) — neither package throttles on its own.
 
 ## Config reference
 

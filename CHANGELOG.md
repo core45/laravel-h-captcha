@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to `core45/h-captcha` are documented in this file, in the format described by
+All notable changes to `core45/laravel-h-captcha` are documented in this file, in the format described by
 [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
@@ -8,6 +8,8 @@ All notable changes to `core45/h-captcha` are documented in this file, in the fo
 
 ### Added
 
+- Drop-in compatibility with `thinhbuzz/laravel-h-captcha`, so that package can be swapped out without an application change: the `CAPTCHA_SECRET` / `CAPTCHA_SITEKEY` env keys are read as fallbacks (`HCAPTCHA_*` wins), a published `config/captcha.php` supplies `secret`, `sitekey`, `options.lang` and `attributes` wherever `hcaptcha.*` is unset, and the `captcha` container binding plus the `Captcha` facade alias expose `display()`, `displayMultiple()`, `displayJs()`, `multiple()`, `setOptions()`, `verify()` (still returning a bool), `getWidgetIdName()` and `getJsVariableName()` through `Core45\HCaptcha\Compat\CaptchaCompat`. A `Form::captcha()` macro is registered when a `form` binding exists. Two deliberate incompatibilities: `captcha.http_client` is ignored and logs a warning, because it named a Guzzle-based client and using Laravel's HTTP client instead is why this package exists; and `displayMultiple()` returns an empty string, because every widget already renders explicitly and the bootstrap script renders all of them.
+- `HCaptchaManager::isUsableCredential()`, which treats `default_sitekey` and `default_secret` — the literals `thinhbuzz/laravel-h-captcha` defaulted to — as "not configured", so a half-migrated install throws instead of rejecting every visitor with no explanation.
 - `Core45\HCaptcha\Support\HttpVerifier`, the single `Verifier` implementation every entry point routes through, using Laravel's `Http` client and memoizing verdicts per request by `hash('sha256', $token)` so a single-use token is spent exactly once regardless of how many guards check it.
 - `Core45\HCaptcha\Support\VerificationResult`, a readonly value object distinguishing a genuine hCaptcha rejection from a local `hostname-mismatch` / `score-too-high` rejection, a missing token, and a service outage.
 - `Core45\HCaptcha\Support\VerificationLogger` and an optional audit trail: `hcaptcha_verifications` migration, `Core45\HCaptcha\Models\HCaptchaVerification` model with `failed()` / `forToken()` scopes, and a `hcaptcha:prune` Artisan command with configurable retention.

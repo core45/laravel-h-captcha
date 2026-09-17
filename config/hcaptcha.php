@@ -23,11 +23,21 @@ return [
     |   sitekey 10000000-ffff-ffff-ffff-000000000001
     |   secret  0x0000000000000000000000000000000000000000
     |
+    | CAPTCHA_SITEKEY and CAPTCHA_SECRET are the env keys
+    | thinhbuzz/laravel-h-captcha used, read here so that package can be swapped
+    | out without touching an existing .env. HCAPTCHA_* wins, so a project that
+    | has already migrated is not overridden by a stale key it forgot to delete.
+    |
+    | That package defaulted these to the literals 'default_sitekey' and
+    | 'default_secret', so a half-configured install carries those strings.
+    | Both are treated as "not configured" rather than as credentials -- see
+    | HCaptchaManager::PLACEHOLDER_CREDENTIALS.
+    |
     */
 
-    'sitekey' => env('HCAPTCHA_SITEKEY'),
+    'sitekey' => env('HCAPTCHA_SITEKEY', env('CAPTCHA_SITEKEY')),
 
-    'secret' => env('HCAPTCHA_SECRET'),
+    'secret' => env('HCAPTCHA_SECRET', env('CAPTCHA_SECRET')),
 
     /*
     |--------------------------------------------------------------------------

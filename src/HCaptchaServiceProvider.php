@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Core45\HCaptcha;
 
+use Core45\HCaptcha\Compat\CaptchaCompat;
 use Core45\HCaptcha\Console\PruneVerificationsCommand;
 use Core45\HCaptcha\Contracts\Verifier;
 use Core45\HCaptcha\Http\Middleware\VerifyHCaptcha;
@@ -33,6 +34,10 @@ class HCaptchaServiceProvider extends ServiceProvider
     {
         $this->mergeConfigFrom(__DIR__.'/../config/hcaptcha.php', 'hcaptcha');
 
+        // Before anything reads hcaptcha.*, let a published config/captcha.php
+        // from thinhbuzz/laravel-h-captcha fill in what it does not set.
+        $this->adoptLegacyConfig();
+
         // scoped(), not singleton(): under Octane the memoized verdicts and the
         // captured Request must not survive into the next request.
         $this->app->scoped(VerificationLogger::class);
@@ -41,6 +46,11 @@ class HCaptchaServiceProvider extends ServiceProvider
         $this->app->scoped(HttpVerifier::class);
 
         $this->app->scoped(HCaptchaManager::class);
+
+        // thinhbuzz/laravel-h-captcha compatibility: the same binding name and
+        // facade accessor, so an existing `Captcha::display()` keeps resolving.
+        $this->app->scoped(CaptchaCompat::class);
+        $this->app->scoped('captcha', static fn ($app): CaptchaCompat => $app->make(CaptchaCompat::class));
     }
 
     public function boot(): void
@@ -51,6 +61,69 @@ class HCaptchaServiceProvider extends ServiceProvider
         $this->bootValidator();
         $this->bootMiddleware();
         $this->bootCommands();
+        $this->bootFormMacro();
+    }
+
+    /**
+     * Adopt a published `config/captcha.php` where `hcaptcha.*` is unset.
+     *
+     * `hcaptcha.*` always wins, so a project that has migrated its config is
+     * never overridden by a file it forgot to delete.
+     */
+    protected function adoptLegacyConfig(): void
+    {
+        $legacy = $this->app['config']->get('captcha');
+
+        if (! is_array($legacy) || $legacy === []) {
+            return;
+        }
+
+        $map = [
+            'secret' => 'hcaptcha.secret',
+            'sitekey' => 'hcaptcha.sitekey',
+            'options.lang' => 'hcaptcha.locale',
+            'attributes' => 'hcaptcha.attributes',
+        ];
+
+        foreach ($map as $from => $to) {
+            $value = data_get($legacy, $from);
+
+            if (in_array($value, [null, '', []], true)) {
+                continue;
+            }
+
+            if ($this->app['config']->get($to) === null) {
+                $this->app['config']->set($to, $value);
+            }
+        }
+
+        if (data_get($legacy, 'http_client') !== null) {
+            // Not honoured, and cannot be: it named a Guzzle-based client, and
+            // using Laravel's Http client instead is why this package exists.
+            $this->app['log']->warning(
+                'captcha.http_client is set but ignored: core45/laravel-h-captcha uses Laravel\'s HTTP client. '
+                .'Remove the key, or config/captcha.php entirely, once the migration is complete.'
+            );
+        }
+    }
+
+    /**
+     * `Form::captcha()`, for applications using an HTML builder that registers
+     * a `form` binding. Skipped entirely when none is installed.
+     */
+    protected function bootFormMacro(): void
+    {
+        if (! $this->app->bound('form')) {
+            return;
+        }
+
+        $form = $this->app->make('form');
+
+        if (! method_exists($form, 'macro')) {
+            return;
+        }
+
+        $form::macro('captcha', fn (array $attributes = [], array $options = []) => app(CaptchaCompat::class)->display($attributes, $options));
     }
 
     protected function bootPublishing(): void

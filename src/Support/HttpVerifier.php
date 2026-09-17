@@ -6,6 +6,7 @@ namespace Core45\HCaptcha\Support;
 
 use Core45\HCaptcha\Contracts\Verifier;
 use Core45\HCaptcha\Exceptions\MissingSecretException;
+use Core45\HCaptcha\HCaptchaManager;
 use Illuminate\Contracts\Config\Repository;
 use Illuminate\Http\Client\Factory as HttpFactory;
 use Psr\Log\LoggerInterface;
@@ -112,12 +113,16 @@ final class HttpVerifier implements Verifier
     {
         $secret = $this->config->get('hcaptcha.secret');
 
-        if (! is_string($secret) || trim($secret) === '') {
+        // Rejects thinhbuzz/laravel-h-captcha's 'default_secret' placeholder as
+        // well as an unset value. Accepting it would fail every verification
+        // with no indication why, which is how that package behaved.
+        if (! HCaptchaManager::isUsableCredential($secret)) {
             throw MissingSecretException::make();
         }
 
+        /** @var string $secret */
         $payload = [
-            'secret' => $secret,
+            'secret' => trim($secret),
             'response' => $token,
         ];
 

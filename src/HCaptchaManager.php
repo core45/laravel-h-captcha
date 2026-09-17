@@ -24,11 +24,34 @@ use InvalidArgumentException;
 class HCaptchaManager
 {
     /**
+     * Values that look like credentials but are not.
+     *
+     * thinhbuzz/laravel-h-captcha defaulted its config to these literals, so a
+     * half-configured install carries them in `.env` or in a published
+     * `config/captcha.php`. Accepting them would reject every visitor with no
+     * explanation, so they are treated as absent and the real problem surfaces.
+     *
+     * @var list<string>
+     */
+    public const PLACEHOLDER_CREDENTIALS = ['default_sitekey', 'default_secret'];
+
+    /**
      * Widget ids rendered during this request, in render order.
      *
      * @var list<string>
      */
     protected array $renderedWidgets = [];
+
+    /**
+     * Whether a configured value is a real credential, rather than unset or one
+     * of the placeholders above.
+     */
+    public static function isUsableCredential(mixed $value): bool
+    {
+        return is_string($value)
+            && trim($value) !== ''
+            && ! in_array(trim($value), self::PLACEHOLDER_CREDENTIALS, true);
+    }
 
     public function __construct(
         protected Repository $config,
@@ -52,11 +75,12 @@ class HCaptchaManager
     {
         $sitekey = $override ?? $this->config->get('hcaptcha.sitekey');
 
-        if (! is_string($sitekey) || trim($sitekey) === '') {
+        if (! self::isUsableCredential($sitekey)) {
             throw MissingSitekeyException::make();
         }
 
-        return $sitekey;
+        /** @var string $sitekey */
+        return trim($sitekey);
     }
 
     /**
@@ -65,9 +89,7 @@ class HCaptchaManager
      */
     public function configured(): bool
     {
-        $sitekey = $this->config->get('hcaptcha.sitekey');
-
-        return is_string($sitekey) && trim($sitekey) !== '';
+        return self::isUsableCredential($this->config->get('hcaptcha.sitekey'));
     }
 
     /**

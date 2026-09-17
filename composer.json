@@ -1,5 +1,5 @@
 {
-    "name": "core45/h-captcha",
+    "name": "core45/laravel-h-captcha",
     "description": "hCaptcha for Laravel: typed verifier with single-use token memoization, Blade component, Livewire and Filament fields, validation rule, middleware, and a database audit trail.",
     "keywords": [
         "laravel",
@@ -9,7 +9,7 @@
         "spam",
         "bot-protection"
     ],
-    "homepage": "https://github.com/core45/h-captcha",
+    "homepage": "https://github.com/core45/laravel-h-captcha",
     "license": "MIT",
     "authors": [
         {
@@ -58,7 +58,8 @@
                 "Core45\\HCaptcha\\HCaptchaServiceProvider"
             ],
             "aliases": {
-                "HCaptcha": "Core45\\HCaptcha\\Facades\\HCaptcha"
+                "HCaptcha": "Core45\\HCaptcha\\Facades\\HCaptcha",
+                "Captcha": "Core45\\HCaptcha\\Compat\\Captcha"
             }
         }
     },
