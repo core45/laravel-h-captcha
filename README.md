@@ -43,6 +43,58 @@ php artisan vendor:publish --tag=hcaptcha-migrations   # database/migrations/*_c
 
 Only run `php artisan migrate` if you intend to turn on the audit trail (`hcaptcha.logging.enabled`). Nothing else in the package needs a database table — verification talks to hCaptcha over HTTP and returns a value object.
 
+## Getting your hCaptcha keys
+
+You need two values: a **sitekey**, which is public and rendered into your HTML, and a **secret key**, which is private and only ever sent server-to-server. They live in different places in the dashboard, which is the usual source of confusion.
+
+### 1. Create an account
+
+Sign up at [dashboard.hcaptcha.com/signup](https://dashboard.hcaptcha.com/signup). The free tier covers ordinary form protection and needs no card.
+
+### 2. Create a sitekey — *Sites* tab
+
+Go to [dashboard.hcaptcha.com/sites](https://dashboard.hcaptcha.com/sites) and add a new site. Enter the hostnames the widget will be served from. You get a sitekey that looks like a UUID:
+
+```dotenv
+HCAPTCHA_SITEKEY=20000000-ffff-ffff-ffff-000000000002
+```
+
+### 3. Copy your secret key — *Settings* tab
+
+The secret key is on [dashboard.hcaptcha.com/settings](https://dashboard.hcaptcha.com/settings), not on the sitekey page. **It belongs to your account, not to an individual sitekey** — every sitekey you create verifies against the same secret. It looks like a hex string:
+
+```dotenv
+HCAPTCHA_SECRET=0x1234567890abcdef1234567890abcdef12345678
+```
+
+Treat it like a password: server-side only, never committed, never rendered.
+
+### 4. Turn on the domain allowlist
+
+In the sitekey's settings, enable the **domain allowlist** and list your hostnames. Listed hostnames automatically cover their subdomains.
+
+This matters more than it looks. Per hCaptcha's own documentation the allowlist is *disabled by default*, so a new sitekey will verify tokens solved on **any** domain — including an attacker's page using your public sitekey. This package's `hostnames` check defends against exactly that from the application side, but the two layers are independent and you want both.
+
+### 5. Set the keys and you are done
+
+```dotenv
+HCAPTCHA_SITEKEY=your-sitekey
+HCAPTCHA_SECRET=your-secret-key
+```
+
+No `HCAPTCHA_HOSTNAMES` needed if the form is served from `APP_URL`'s host — that is the default. Set it when the form lives on another host (a proxy, an alternate domain, a staging alias), or genuine submissions are rejected as `hostname-mismatch`.
+
+### Testing without an account
+
+hCaptcha publishes a keypair that always verifies successfully, so you can build and run tests before signing up:
+
+```dotenv
+HCAPTCHA_SITEKEY=10000000-ffff-ffff-ffff-000000000001
+HCAPTCHA_SECRET=0x0000000000000000000000000000000000000000
+```
+
+The token it produces is `10000000-aaaa-bbbb-cccc-000000000001`. These accept everything, so never let them reach production — the package cannot tell them apart from real credentials.
+
 ## Migrating from thinhbuzz/laravel-h-captcha
 
 ```bash
