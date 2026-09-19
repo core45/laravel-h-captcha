@@ -17,13 +17,20 @@ use Symfony\Component\HttpFoundation\Response;
  * touch.
  *
  *     Route::post('/contact', ContactController::class)->middleware('hcaptcha');
+ *     Route::post('/contact', ContactController::class)->middleware('hcaptcha:h-captcha-response,20000000-ffff-ffff-ffff-000000000002');
+ *
+ * The second parameter is the sitekey the widget was rendered with, needed
+ * only when it differs from the configured one.
  *
  * A rejection throws ValidationException, so the failure arrives as a 422 with
  * a message bag rather than a 500 -- and as a redirect-with-errors for a
  * regular form post.
  *
- * Safe to stack with the validation rule on the same field: the verifier
- * memoizes per `(token, field, action)`, so the single-use token is spent once.
+ * Safe to stack with the validation rule on the same field: the middleware
+ * scopes by field (and sitekey, when given) and the rule scopes the same way
+ * outside Livewire, so the single-use token is spent once. Inside a Livewire
+ * request the rule additionally scopes by component; stack the middleware on
+ * a Livewire update route and the two will not share a verdict.
  *
  * Put this on the state-changing route only, never on a route group that also
  * serves the GET which renders the form -- it verifies every request it sees,
@@ -46,7 +53,7 @@ class VerifyHCaptcha
     /**
      * @param  Closure(Request): Response  $next
      */
-    public function handle(Request $request, Closure $next, ?string $field = null): Response
+    public function handle(Request $request, Closure $next, ?string $field = null, ?string $sitekey = null): Response
     {
         $field ??= $this->fieldName();
 
@@ -58,7 +65,7 @@ class VerifyHCaptcha
         $result = $this->verifier->verify(
             is_string($token) ? $token : null,
             $request->ip(),
-            VerificationContext::forField($field),
+            new VerificationContext(field: $field, sitekey: $sitekey !== null && $sitekey !== '' ? $sitekey : null),
         );
 
         if ($result->failed()) {

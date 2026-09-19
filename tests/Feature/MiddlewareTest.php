@@ -2,7 +2,9 @@
 
 declare(strict_types=1);
 
+use Core45\HCaptcha\Rules\HCaptcha;
 use Core45\HCaptcha\Tests\TestCase;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Route;
 
@@ -123,6 +125,38 @@ it('reads a field whose name contains a dot as a literal key', function (): void
         ->middleware('hcaptcha:my.captcha');
 
     $this->postJson('/dotted', ['my.captcha' => TestCase::TEST_TOKEN])
+        ->assertOk();
+
+    Http::assertSentCount(1);
+});
+
+it('shares one verdict with a rule that names the same explicit sitekey', function (): void {
+    Http::fake([
+        'api.hcaptcha.com/*' => Http::response(['success' => true, 'hostname' => 'localhost']),
+    ]);
+
+    Route::post('/keyed', function (Request $request) {
+        $request->validate(['h-captcha-response' => [new HCaptcha(sitekey: '20000000-ffff-ffff-ffff-000000000002')]]);
+
+        return response()->json(['ok' => true]);
+    })->middleware('hcaptcha:h-captcha-response,20000000-ffff-ffff-ffff-000000000002');
+
+    $this->postJson('/keyed', ['h-captcha-response' => TestCase::TEST_TOKEN])
+        ->assertOk();
+
+    Http::assertSentCount(1);
+    Http::assertSent(fn (Illuminate\Http\Client\Request $request): bool => $request['sitekey'] === '20000000-ffff-ffff-ffff-000000000002');
+});
+
+it('falls back to dot notation for a nested body when no literal key matches', function (): void {
+    Http::fake([
+        'api.hcaptcha.com/*' => Http::response(['success' => true, 'hostname' => 'localhost']),
+    ]);
+
+    Route::post('/nested', fn () => response()->json(['ok' => true]))
+        ->middleware('hcaptcha:my.captcha');
+
+    $this->postJson('/nested', ['my' => ['captcha' => TestCase::TEST_TOKEN]])
         ->assertOk();
 
     Http::assertSentCount(1);
