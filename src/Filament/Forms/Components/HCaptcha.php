@@ -182,6 +182,16 @@ class HCaptcha extends Field
         return $this->manager()->configured($this->evaluate($this->sitekey));
     }
 
+    /**
+     * Called by the view once it has decided to degrade -- never by
+     * `isConfigured()` itself, which stays a pure query so it can be checked
+     * without side effects.
+     */
+    public function logMisconfigured(): void
+    {
+        $this->manager()->logMisconfigured();
+    }
+
     protected function manager(): HCaptchaManager
     {
         return app(HCaptchaManager::class);

@@ -136,26 +136,24 @@ class HCaptchaManager
      */
     public function configured(?string $override = null): bool
     {
-        $configured = self::isUsableCredential($override ?? $this->config->get('hcaptcha.sitekey'));
-
-        if (! $configured) {
-            $this->logMisconfiguredOnce();
-        }
-
-        return $configured;
+        return self::isUsableCredential($override ?? $this->config->get('hcaptcha.sitekey'));
     }
 
     /**
      * Warn once per process that a widget degraded because no usable site key
-     * resolved. Both render paths (the Blade component and the Filament
-     * field) reach this through `configured()`, so the two behave identically
-     * and an operator gets the same signal regardless of which one they used.
+     * resolved. `configured()` above is a pure query -- anything can call it to
+     * ask whether a key is usable, including compatibility code and future
+     * diagnostics, without that call meaning a widget rendered nothing. This
+     * method is the operational side effect, and it is the render paths'
+     * responsibility to call it once they have actually decided to degrade:
+     * the Blade component's constructor and the Filament field's view both do,
+     * so an operator gets the same signal regardless of which one they used.
      *
      * Skipped when `app.debug` is true: the visible `hcaptcha-misconfigured`
      * notice the view renders in that case already tells the developer, and
      * logging on top of it would be redundant.
      */
-    private function logMisconfiguredOnce(): void
+    public function logMisconfigured(): void
     {
         if (self::$misconfiguredLogged || $this->config->get('app.debug')) {
             return;

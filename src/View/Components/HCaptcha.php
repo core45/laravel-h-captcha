@@ -55,6 +55,8 @@ class HCaptcha extends Component
 
         if ($this->available) {
             $this->widgetAttributes = $manager->attributes($this->overrides(), $sitekey);
+        } else {
+            $manager->logMisconfigured();
         }
     }
 

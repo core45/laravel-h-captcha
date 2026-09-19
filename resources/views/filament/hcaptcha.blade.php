@@ -5,6 +5,7 @@
     @if (! $isConfigured())
         {{-- No site key. Render nothing rather than throwing; the rule still
              rejects the submission, so nothing gets past the field. --}}
+        @php($logMisconfigured())
         @if (config('app.debug'))
             <div class="hcaptcha-misconfigured" role="alert">
                 {{ __('hcaptcha::hcaptcha.label') }}: HCAPTCHA_SITEKEY is not set.

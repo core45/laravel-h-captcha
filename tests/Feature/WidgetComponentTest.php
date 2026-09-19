@@ -203,6 +203,16 @@ it('does not log the misconfiguration warning while the debug notice already sho
     renderWidget();
 });
 
+it('does not log anything when configured() is queried on its own', function (): void {
+    HCaptchaManager::forgetLoggedWarnings();
+    config()->set('hcaptcha.sitekey', null);
+    config()->set('app.debug', false);
+
+    Log::shouldReceive('warning')->never();
+
+    expect(app(HCaptchaManager::class)->configured())->toBeFalse();
+});
+
 it('renders with an explicit sitekey when no global sitekey is configured', function (): void {
     config()->set('hcaptcha.sitekey', null);
 
