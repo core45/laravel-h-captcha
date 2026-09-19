@@ -82,6 +82,10 @@ it('passes theme and size through as data attributes', function (): void {
         ->toContain('data-size="compact"');
 });
 
+it('renders an invisible widget with the size the script keys its submit binding on', function (): void {
+    expect(renderWidget('<x-hcaptcha size="invisible" />'))->toContain('data-size="invisible"');
+});
+
 it('lets an explicit theme override the configured default', function (): void {
     config()->set('hcaptcha.attributes', ['theme' => 'light']);
 

@@ -284,11 +284,19 @@ window.__NAMESPACE__ = window.__NAMESPACE__ || (function () {
 
             execute(el.id)
                 .then(() => {
-                    if (typeof form.requestSubmit === 'function') {
-                        form.requestSubmit(submitter);
-                    } else {
-                        form.submit();
-                    }
+                    // A browser keeps the form's submission machinery locked
+                    // for the rest of the task that dispatched this event, so
+                    // calling requestSubmit() from a microtask continuation
+                    // of that same task (as this .then() callback runs) is a
+                    // silent no-op. Deferring to a new task via setTimeout
+                    // lets the lock clear first.
+                    setTimeout(() => {
+                        if (typeof form.requestSubmit === 'function') {
+                            form.requestSubmit(submitter);
+                        } else {
+                            form.submit();
+                        }
+                    }, 0);
                 })
                 .catch(() => {
                     // The status element already shows the error; the visitor
