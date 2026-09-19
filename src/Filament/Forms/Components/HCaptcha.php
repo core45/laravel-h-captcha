@@ -116,9 +116,13 @@ class HCaptcha extends Field
         return $this->manager()->sitekey($this->evaluate($this->sitekey));
     }
 
+    /**
+     * Scoped to the Livewire component by the manager, so two forms with the
+     * same state path on one page get distinct ids.
+     */
     public function getWidgetId(): string
     {
-        return $this->manager()->widgetId($this->getStatePath());
+        return $this->manager()->widgetId(key: $this->getStatePath());
     }
 
     /**

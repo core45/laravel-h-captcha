@@ -17,7 +17,7 @@ use Illuminate\Support\Facades\Facade;
  * @method static string scriptUrl(?string $locale = null)
  * @method static array<string, string> attributes(array<string, string|int|float|bool|null> $overrides = [], ?string $sitekey = null)
  * @method static \Illuminate\Support\HtmlString attributeString(array<string, string> $attributes)
- * @method static string widgetId(?string $override = null)
+ * @method static string widgetId(?string $override = null, ?string $key = null)
  * @method static list<string> renderedWidgets()
  * @method static string callbackName()
  * @method static string namespaceName()

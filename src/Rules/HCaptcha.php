@@ -6,13 +6,12 @@ namespace Core45\HCaptcha\Rules;
 
 use Closure;
 use Core45\HCaptcha\Contracts\Verifier;
+use Core45\HCaptcha\Support\LivewireContext;
 use Core45\HCaptcha\Support\VerificationContext;
 use Core45\HCaptcha\Support\VerificationResult;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Http\Request;
 use Illuminate\Translation\PotentiallyTranslatedString;
-use Livewire\Component as LivewireComponent;
-use Livewire\LivewireManager;
 
 /**
  * Validates an hCaptcha token.
@@ -89,31 +88,9 @@ class HCaptcha implements ValidationRule
     {
         return new VerificationContext(
             field: $attribute,
-            action: $this->action ?? $this->currentLivewireAction(),
+            action: $this->action ?? LivewireContext::action(),
             sitekey: $this->sitekey,
         );
-    }
-
-    /**
-     * Identify the Livewire component whose request is being handled, if any.
-     *
-     * Livewire keeps a stack of the components it is currently processing;
-     * outside a Livewire request the stack is empty and this returns null, so
-     * a plain form scopes by field alone.
-     */
-    protected function currentLivewireAction(): ?string
-    {
-        if (! class_exists(LivewireManager::class) || ! app()->bound(LivewireManager::class)) {
-            return null;
-        }
-
-        $component = app(LivewireManager::class)->current();
-
-        if (! $component instanceof LivewireComponent) {
-            return null;
-        }
-
-        return $component::class.'#'.$component->getId();
     }
 
     protected function verifier(): Verifier

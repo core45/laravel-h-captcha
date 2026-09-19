@@ -27,18 +27,19 @@
             id="{{ $widgetId }}"
             data-hcaptcha
             data-hcaptcha-explicit
-            @if ($model) data-hcaptcha-model="{{ $model }}" @endif
             {{ $attributeString() }}
         ></div>
     </div>
 
     {{-- The token, in a field we control, populated by the bootstrap script's
          callback. Deliberately outside the wire:ignore container so Livewire
-         still tracks it. --}}
+         still tracks it. data-hcaptcha-field names the attribute the server
+         validates, which is how a reset finds the widget it belongs to. --}}
     <input
         type="hidden"
         id="{{ $widgetId }}-response"
         name="{{ $fieldName() }}"
+        data-hcaptcha-field="{{ $model ?? $fieldName() }}"
         @if ($model) wire:model="{{ $model }}" @endif
     >
 

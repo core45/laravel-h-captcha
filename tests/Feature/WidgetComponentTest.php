@@ -3,8 +3,10 @@
 declare(strict_types=1);
 
 use Core45\HCaptcha\HCaptchaManager;
+use Core45\HCaptcha\Tests\Fixtures\BrowserGuardedForm;
 use Core45\HCaptcha\Tests\TestCase;
 use Illuminate\Support\Facades\Blade;
+use Livewire\Livewire;
 
 /**
  * @param  array<string, mixed>  $data
@@ -184,4 +186,38 @@ it('degrades instead of throwing when the explicit sitekey is a placeholder', fu
 
     expect($html)->toContain('hcaptcha-misconfigured')
         ->not->toContain('data-sitekey=');
+});
+
+it('gives each widget on a plain page a deterministic id in render order', function (): void {
+    $html = renderWidget('<x-hcaptcha /><x-hcaptcha />');
+
+    expect($html)
+        ->toContain('id="hcaptcha-page-1"')
+        ->toContain('id="hcaptcha-page-1-response"')
+        ->toContain('id="hcaptcha-page-2"')
+        ->not->toContain('id="hcaptcha-page-3"');
+});
+
+it('names the validated field on the response input', function (): void {
+    expect(renderWidget())->toContain('data-hcaptcha-field="h-captcha-response"')
+        ->and(renderWidget('<x-hcaptcha model="captchaToken" />'))->toContain('data-hcaptcha-field="captchaToken"');
+});
+
+it('no longer emits the dead data-hcaptcha-model attribute', function (): void {
+    expect(renderWidget('<x-hcaptcha model="captchaToken" />'))->not->toContain('data-hcaptcha-model');
+});
+
+it('scopes generated ids to the Livewire component that renders them', function (): void {
+    $component = Livewire::test(BrowserGuardedForm::class);
+    $id = $component->instance()->getId();
+
+    $component->assertSeeHtml('id="hcaptcha-'.$id.'-1"')
+        ->assertSeeHtml('id="hcaptcha-'.$id.'-1-response"');
+
+    // A re-render of the same component instance reproduces the same id.
+    $component->call('$refresh')->assertSeeHtml('id="hcaptcha-'.$id.'-1"');
+});
+
+it('sanitises an explicit id into a safe DOM id', function (): void {
+    expect(app(HCaptchaManager::class)->widgetId('contact form/captcha'))->toBe('contact-form-captcha');
 });

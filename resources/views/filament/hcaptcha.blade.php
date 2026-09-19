@@ -32,6 +32,7 @@
     <input
         type="hidden"
         id="{{ $getWidgetId() }}-response"
+        data-hcaptcha-field="{{ $getStatePath() }}"
         wire:model="{{ $getStatePath() }}"
     >
 </x-dynamic-component>

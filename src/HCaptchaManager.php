@@ -6,12 +6,12 @@ namespace Core45\HCaptcha;
 
 use Core45\HCaptcha\Contracts\Verifier;
 use Core45\HCaptcha\Exceptions\MissingSitekeyException;
+use Core45\HCaptcha\Support\LivewireContext;
 use Core45\HCaptcha\Support\VerificationContext;
 use Core45\HCaptcha\Support\VerificationResult;
 use Illuminate\Contracts\Config\Repository;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Support\HtmlString;
-use Illuminate\Support\Str;
 use InvalidArgumentException;
 
 /**
@@ -42,6 +42,27 @@ class HCaptchaManager
      * @var list<string>
      */
     protected array $renderedWidgets = [];
+
+    /**
+     * Render counters per id scope (a Livewire component id, or `page`).
+     *
+     * @var array<string, int>
+     */
+    protected array $widgetCounters = [];
+
+    /**
+     * The object id of the Livewire component instance last seen rendering
+     * each scope.
+     *
+     * A component instance is deserialized fresh for every Livewire request,
+     * so a new object id for a scope we have already counted for means this
+     * is a new render pass of that component and the counter must restart --
+     * otherwise a re-render would keep counting up instead of reproducing the
+     * ids it produced the first time.
+     *
+     * @var array<string, int>
+     */
+    protected array $widgetScopeRenders = [];
 
     /**
      * Whether a configured value is a real credential, rather than unset or one
@@ -215,20 +236,57 @@ class HCaptchaManager
     }
 
     /**
-     * A DOM id for a widget, remembered so the explicit-render script can find
-     * every widget on the page.
+     * A DOM id for a widget, deterministic so that a Livewire re-render binds
+     * to the same hidden input it rendered with the first time.
+     *
+     * Without an override the id is `hcaptcha-{scope}-{key}`: `scope` is the
+     * executing Livewire component's id, or `page` outside Livewire; `key` is
+     * the caller's key (Filament passes the state path) or a per-scope render
+     * counter. Livewire renders a component in a fresh request, so the counter
+     * restarts and the same widget gets the same id every time.
      */
-    public function widgetId(?string $override = null): string
+    public function widgetId(?string $override = null, ?string $key = null): string
     {
-        $id = $override !== null && $override !== ''
-            ? $override
-            : 'hcaptcha-'.Str::random(12);
+        if ($override !== null && $override !== '') {
+            $id = $this->domId($override);
+        } else {
+            $component = LivewireContext::component();
+            $scope = $component?->getId() ?? 'page';
+
+            if ($key === null || $key === '') {
+                if ($component !== null) {
+                    $renderToken = spl_object_id($component);
+
+                    if (($this->widgetScopeRenders[$scope] ?? null) !== $renderToken) {
+                        $this->widgetScopeRenders[$scope] = $renderToken;
+                        $this->widgetCounters[$scope] = 0;
+                    }
+                }
+
+                $this->widgetCounters[$scope] = ($this->widgetCounters[$scope] ?? 0) + 1;
+                $key = (string) $this->widgetCounters[$scope];
+            }
+
+            $id = $this->domId('hcaptcha-'.$scope.'-'.$key);
+        }
 
         if (! in_array($id, $this->renderedWidgets, true)) {
             $this->renderedWidgets[] = $id;
         }
 
         return $id;
+    }
+
+    /**
+     * Collapse anything outside `[A-Za-z0-9_-]` into a hyphen, so a state path
+     * such as `data.h-captcha-response` or a caller's free text becomes a
+     * selector-safe id.
+     */
+    protected function domId(string $value): string
+    {
+        $id = trim((string) preg_replace('/[^A-Za-z0-9_-]+/', '-', $value), '-');
+
+        return $id === '' ? 'hcaptcha' : $id;
     }
 
     /**
