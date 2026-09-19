@@ -109,6 +109,11 @@ class HCaptcha extends Component
         return $this->manager->bootstrapScript();
     }
 
+    public function namespaceName(): string
+    {
+        return $this->manager->namespaceName();
+    }
+
     public function render(): View
     {
         /** @var view-string $view */

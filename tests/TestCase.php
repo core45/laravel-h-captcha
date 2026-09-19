@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Core45\HCaptcha\Tests;
 
 use Core45\HCaptcha\HCaptchaServiceProvider;
+use Core45\HCaptcha\Tests\Fixtures\BladeRenderInsideLivewireComponent;
 use Core45\HCaptcha\Tests\Fixtures\BrowserGuardedForm;
 use Core45\HCaptcha\Tests\Fixtures\BrowserModalComponent;
 use Core45\HCaptcha\Tests\Fixtures\HCaptchaFormComponent;
@@ -66,6 +67,7 @@ class TestCase extends Orchestra
         Livewire::component('hcaptcha-form-component', HCaptchaFormComponent::class);
         Livewire::component('browser-guarded-form', BrowserGuardedForm::class);
         Livewire::component('browser-modal', BrowserModalComponent::class);
+        Livewire::component('blade-render-inside-livewire-component', BladeRenderInsideLivewireComponent::class);
     }
 
     protected function getPackageProviders($app): array

@@ -7,6 +7,7 @@
             @include('hcaptcha::script', [
                 'scriptUrl' => $getScriptUrl(),
                 'bootstrap' => $getBootstrapScript(),
+                'namespaceName' => $getNamespaceName(),
             ])
         @endonce
     @endif

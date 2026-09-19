@@ -157,6 +157,11 @@ class HCaptcha extends Field
         return $this->manager()->bootstrapScript();
     }
 
+    public function getNamespaceName(): string
+    {
+        return $this->manager()->namespaceName();
+    }
+
     public function shouldRenderScript(): bool
     {
         return $this->manager()->scriptEnabled();

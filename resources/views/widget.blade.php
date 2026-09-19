@@ -13,6 +13,7 @@
             @include('hcaptcha::script', [
                 'scriptUrl' => $scriptUrl(),
                 'bootstrap' => $bootstrapScript(),
+                'namespaceName' => $namespaceName(),
             ])
         @endonce
     @endif

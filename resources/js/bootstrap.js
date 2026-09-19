@@ -78,32 +78,43 @@ window.__NAMESPACE__ = window.__NAMESPACE__ || (function () {
 
         const id = el.id;
 
-        const widgetId = window.hcaptcha.render(el, {
-            sitekey: el.dataset.sitekey,
-            theme: el.dataset.theme || undefined,
-            size: el.dataset.size || undefined,
-            tabindex: el.dataset.tabindex || undefined,
-            callback: (token) => {
-                publish(id, token);
-                setStatus(id, '');
-                callHook(el, 'callback', token);
-            },
-            'expired-callback': () => {
-                publish(id, '');
-                callHook(el, 'expiredCallback');
-            },
-            'chalexpired-callback': () => {
-                publish(id, '');
-                callHook(el, 'chalexpiredCallback');
-            },
-            'error-callback': (code) => {
-                publish(id, '');
-                setStatus(id, el.dataset.messageError);
-                callHook(el, 'errorCallback', code);
-            },
-            'open-callback': () => callHook(el, 'openCallback'),
-            'close-callback': () => callHook(el, 'closeCallback'),
-        });
+        let widgetId;
+
+        try {
+            widgetId = window.hcaptcha.render(el, {
+                sitekey: el.dataset.sitekey,
+                theme: el.dataset.theme || undefined,
+                size: el.dataset.size || undefined,
+                tabindex: el.dataset.tabindex || undefined,
+                callback: (token) => {
+                    publish(id, token);
+                    setStatus(id, '');
+                    callHook(el, 'callback', token);
+                },
+                'expired-callback': () => {
+                    publish(id, '');
+                    callHook(el, 'expiredCallback');
+                },
+                'chalexpired-callback': () => {
+                    publish(id, '');
+                    callHook(el, 'chalexpiredCallback');
+                },
+                'error-callback': (code) => {
+                    publish(id, '');
+                    setStatus(id, el.dataset.messageError);
+                    callHook(el, 'errorCallback', code);
+                },
+                'open-callback': () => callHook(el, 'openCallback'),
+                'close-callback': () => callHook(el, 'closeCallback'),
+            });
+        } catch (error) {
+            // Mark the container attempted regardless of the failure, or the
+            // next animation frame retries it forever.
+            el.dataset.hcaptchaRendered = 'true';
+            setStatus(id, el.dataset.messageError);
+
+            return;
+        }
 
         el.dataset.hcaptchaRendered = 'true';
         widgets[id] = widgetId;
@@ -114,13 +125,17 @@ window.__NAMESPACE__ = window.__NAMESPACE__ || (function () {
     }
 
     // Forget widgets whose container left the document (a closed modal, a
-    // Livewire branch that rendered away). hCaptcha documents no remove();
-    // call it only when the SDK happens to provide one.
+    // Livewire branch that rendered away), or whose container is still in
+    // the document but lost its rendered flag -- the container inside
+    // wire:ignore survives a morph that removes and re-adds the whole
+    // wire:ignore block in one batch, leaving a stale handle pointing at a
+    // fresh, unrendered element. hCaptcha documents no remove(); call it
+    // only when the SDK happens to provide one.
     function prune() {
         Object.keys(widgets).forEach((id) => {
             const el = container(id);
 
-            if (el && document.contains(el)) {
+            if (el && document.contains(el) && el.dataset.hcaptchaRendered === 'true') {
                 return;
             }
 
