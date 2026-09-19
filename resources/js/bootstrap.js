@@ -283,13 +283,24 @@ window.__NAMESPACE__ = window.__NAMESPACE__ || (function () {
             const submitter = event.submitter instanceof HTMLElement ? event.submitter : undefined;
 
             execute(el.id)
-                .then(() => {
-                    // A browser keeps the form's submission machinery locked
-                    // for the rest of the task that dispatched this event, so
-                    // calling requestSubmit() from a microtask continuation
-                    // of that same task (as this .then() callback runs) is a
-                    // silent no-op. Deferring to a new task via setTimeout
-                    // lets the lock clear first.
+                .then((token) => {
+                    // Resubmitting without a token would re-enter this same
+                    // interceptor, see the field still empty, and start
+                    // another challenge -- an unbounded loop, one challenge
+                    // per task. Only a real token earns a resubmit.
+                    if (typeof token !== 'string' || token === '') {
+                        return;
+                    }
+
+                    // The HTML submission algorithm sets a "firing submission
+                    // events" flag for the duration of dispatching this
+                    // submit event and clears it as soon as dispatch returns.
+                    // After a real click the call stack is empty when the
+                    // listener returns, so a microtask continuation (this
+                    // .then()) still runs inside that dispatch, while the
+                    // flag is still set, and a nested requestSubmit() is
+                    // silently dropped. A fresh task is guaranteed to run
+                    // after dispatch has returned and the flag has cleared.
                     setTimeout(() => {
                         if (typeof form.requestSubmit === 'function') {
                             form.requestSubmit(submitter);

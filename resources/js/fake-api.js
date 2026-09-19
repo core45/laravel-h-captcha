@@ -6,9 +6,11 @@
  * `fake-token-<widgetId>-<n>`.
  *
  * Inspect or steer it from a test through `window.__fakeHCaptcha`:
- *   loads     how many times this script executed (SDK reload detection)
- *   widgets   widgetId -> { el, params, token, resets }
- *   failNext  set to an hCaptcha error code to make the next solve fail
+ *   loads          how many times this script executed (SDK reload detection)
+ *   widgets        widgetId -> { el, params, token, resets }
+ *   failNext       set to an hCaptcha error code to make the next solve fail
+ *   emptyNext      set true to make the next solve resolve without a token,
+ *                  as the real SDK can under some misconfigurations
  */
 (function () {
     const currentScript = document.currentScript;
@@ -22,6 +24,7 @@
         nextId: 1,
         tokens: 0,
         failNext: null,
+        emptyNext: false,
     };
 
     state.loads += 1;
@@ -49,6 +52,13 @@
             }
 
             return Promise.reject(code);
+        }
+
+        if (state.emptyNext) {
+            state.emptyNext = false;
+            entry.token = '';
+
+            return Promise.resolve({ response: '', key: '' });
         }
 
         state.tokens += 1;
