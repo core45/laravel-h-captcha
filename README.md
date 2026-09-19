@@ -122,7 +122,7 @@ No application code needs to change. The `Captcha` facade, the `captcha` validat
 
 ### The hostname check — the most likely migration surprise
 
-`hostnames` is **on by default** in this package, derived from `APP_URL`. If your form is served from a different host than `APP_URL` (a staging domain, a second brand, a proxy), set `HCAPTCHA_HOSTNAMES` to a comma-separated list of the hostnames that should be accepted — otherwise genuine submissions get rejected with `hostname-mismatch`. See [Your sitekey is public](#your-sitekey-is-public--this-is-why-hostnames-matters) for why this check exists at all.
+`hostnames` is **on by default** in this package, derived from `APP_URL`. If your form is served from a different host than `APP_URL` (a staging domain, a second brand, a proxy), set `HCAPTCHA_HOSTNAMES` to a comma-separated list of the hostnames that should be accepted — otherwise genuine submissions get rejected with `hostname-mismatch`. See [Your sitekey is public](#your-sitekey-is-public--this-is-why-hostnames-matters) for why this check exists at all. A hostname hCaptcha reports as missing or `not-provided` passes with a warning unless `HCAPTCHA_HOSTNAMES_STRICT` is set. An install that relied on 1.x rejecting an unreported hostname should set `HCAPTCHA_HOSTNAMES_STRICT=true`; either way, the authoritative origin control is the domain allowlist on the sitekey in the hCaptcha dashboard, not this check.
 
 ### Recommended follow-up
 
@@ -143,11 +143,12 @@ Every key in `config/hcaptcha.php`:
 | `secret` | `HCAPTCHA_SECRET` | `null` |
 | `endpoint` | `HCAPTCHA_ENDPOINT` | `https://api.hcaptcha.com/siteverify` |
 | `timeout` | `HCAPTCHA_TIMEOUT` | `10` |
-| `retries` | `HCAPTCHA_RETRIES` | `1` |
+| `retries` | `HCAPTCHA_RETRIES` | `0` |
 | `max_token_length` | `HCAPTCHA_MAX_TOKEN_LENGTH` | `8192` |
 | `fail_open` | `HCAPTCHA_FAIL_OPEN` | `false` |
 | `send_sitekey` | `HCAPTCHA_SEND_SITEKEY` | `true` |
 | `hostnames` | `HCAPTCHA_HOSTNAMES` | host of `APP_URL` |
+| `hostnames_strict` | `HCAPTCHA_HOSTNAMES_STRICT` | `false` |
 | `max_score` | `HCAPTCHA_MAX_SCORE` | `null` |
 | `field` | — | `h-captcha-response` |
 | `locale` | — | `null` (resolves the app locale at render time) |
@@ -161,21 +162,27 @@ Every key in `config/hcaptcha.php`:
 | `logging.store_user_agent` | `HCAPTCHA_LOG_USER_AGENT` | `false` |
 | `logging.store_url` | `HCAPTCHA_LOG_URL` | `false` |
 | `logging.log_missing_token` | `HCAPTCHA_LOG_MISSING_TOKEN` | `false` |
+| `logging.log_oversized_token` | `HCAPTCHA_LOG_OVERSIZED_TOKEN` | `false` |
 | `logging.retention_days` | `HCAPTCHA_RETENTION_DAYS` | `90` |
 
 `sitekey` and `secret` both default to `null` on purpose: a missing secret throws (`MissingSecretException`) rather than silently rejecting every visitor, and a missing sitekey throws when a widget or field asks for one (`MissingSitekeyException`), or degrades to rendering nothing when the caller checks `HCaptcha::configured()` first.
+
+`retries` counts additional attempts after the first and defaults to `0`.
 
 `max_token_length` rejects an oversized token without making an HTTP call. hCaptcha tokens run a few hundred to a few thousand characters, so without a cap an unauthenticated request could have the package proxy a huge body to hCaptcha while holding a PHP worker for the whole timeout.
 
 ### Your sitekey is public — this is why `hostnames` matters
 
-**Your sitekey is public. It is sitting in your page's HTML.** An attacker can embed *your* sitekey on *their own* page, solve the challenge there themselves — or simply buy a solved token from a captcha farm — and post that genuine token to your form. `siteverify` answers `success: true`, because the token really was solved against your sitekey; it just reports `hostname: attacker.example`. `send_sitekey` cannot catch this: the sitekey matches, so there is nothing for it to flag as a mismatch. **The hostname check is the only defence against this attack.**
+**Your sitekey is public. It is sitting in your page's HTML.** An attacker can embed *your* sitekey on *their own* page, solve the challenge there themselves — or buy a solved token from a captcha farm — and post that genuine token to your form. `siteverify` answers `success: true`, because the token really was solved against your sitekey. `send_sitekey` cannot catch this: the sitekey matches, so there is nothing to flag.
 
-That is why `hostnames` now defaults to on rather than `null`: `env('HCAPTCHA_HOSTNAMES', parse_url((string) env('APP_URL'), PHP_URL_HOST))`. Set `HCAPTCHA_HOSTNAMES` to a comma-separated list for multi-domain installs. Setting it to an empty string disables the check — and that is logged as an `error` on every verification, since silently turning off the one defence against sitekey theft deserves a loud signal. Blank entries inside a configured list are filtered out too, so an empty string can never masquerade as "a restriction" that nothing can match. If the configured value resolves to no usable hostname at all, the check is logged as inactive rather than silently behaving as "no restriction".
+Two layers limit that attack, and you want both.
 
-**Also restrict the sitekey's hostnames in the hCaptcha dashboard.** That allowlist is off by default for new sitekeys. Skip it and both layers of the origin check are absent, and the attack above goes through unmodified.
+1. **The domain allowlist on the sitekey in the hCaptcha dashboard.** This is the authoritative one, and it is *off by default* for new sitekeys. Turn it on.
+2. **This package's `hostnames` check**, on by default and derived from `APP_URL`. hCaptcha documents the reported hostname as browser-derived and "not suitable for authentication", and says it may come back as `not-provided` under load. Treat this check as a policy that catches careless misuse, not as proof of origin.
 
-`max_score` is a **risk** score, the inverse of reCAPTCHA v3: higher means more bot-like, so this is a ceiling, not a floor, and it only applies to Publisher/Pro accounts that return a `score` at all.
+Set `HCAPTCHA_HOSTNAMES` to a comma-separated list for multi-domain installs. Setting it to an empty string disables the check, which is logged as an `error` once per process. A response whose hostname is missing or `not-provided` passes with a `warning`; set `HCAPTCHA_HOSTNAMES_STRICT=true` to reject those instead, with `rejectedBy: hostname-unknown`.
+
+`max_score` is a **risk** score, the inverse of reCAPTCHA v3: higher means more bot-like, so this is a ceiling, not a floor, and it only applies to Enterprise accounts that return a `score` at all.
 
 hCaptcha's documented test keys always verify successfully and are safe for local development and CI:
 
@@ -257,6 +264,8 @@ Route::post('/contact', ContactController::class)->middleware('hcaptcha');
 Route::post('/contact', ContactController::class)->middleware('hcaptcha:my-field');
 ```
 
+The middleware also accepts an optional second parameter, the sitekey the widget was rendered with (`hcaptcha:h-captcha-response,<sitekey>`), so it shares a verdict with a rule constructed with the same `sitekey:`.
+
 Registered under the alias `hcaptcha` (`Core45\HCaptcha\Http\Middleware\VerifyHCaptcha`). It reads the token from `config('hcaptcha.field')` unless a field name is passed as middleware parameter, **verifies every request it sees — it no longer skips `GET`/`HEAD`/`OPTIONS`** — and on failure throws `Illuminate\Validation\ValidationException` with the same translated message key the rule object would produce — a 422 with a message bag, or a redirect-with-errors for a normal form post, never a 500. Safe to stack with the validation rule or the Filament field: the verifier's per-request memoization means the token is still spent only once.
 
 **Put this middleware on the state-changing route only — never on a route group that also serves the GET that renders the form.** Because it checks every method, a group covering both the form's GET and its POST would fail the GET too. The old allowlist that skipped GET/HEAD/OPTIONS was removed because it was spoofable: Symfony's `_method` override refuses only `GET`, `HEAD`, `CONNECT` and `TRACE`, so a POST carrying `_method=OPTIONS` reported as `OPTIONS` and skipped the check while the controller still received the full POST body. A route that fails loudly in development beats one that can be silently bypassed in production.
@@ -327,19 +336,34 @@ if ($result->passed()) {
 
 | Property | Type | Meaning |
 | --- | --- | --- |
-| `success` | `bool` | hCaptcha's own verdict — compared with `=== true` against the decoded response, not cast, so a malformed 200 body cannot turn into a pass |
-| `hostname` | `?string` | Hostname the token was minted for |
+| `success` | `bool` | hCaptcha's own verdict — compared with `=== true` against the decoded response, not cast, so a malformed 200 body cannot turn into a pass. Never rewritten by this package. |
+| `accepted` | `bool` | This package's final answer, after the hostname and score assertions and the fail-open policy. What `passed()` returns. |
+| `hostname` | `?string` | Hostname the token was reported for. Browser-derived; may be `not-provided`. |
 | `challengeTs` | `?Carbon` | Challenge timestamp |
-| `score` | `?float` | Risk score (Publisher/Pro accounts only) |
+| `score` | `?float` | Risk score (Enterprise accounts only) |
 | `scoreReasons` | `list<string>` | Score explanation codes |
 | `errorCodes` | `list<string>` | Error codes from hCaptcha, plus any local rejection reason appended |
 | `credit` | `?bool` | Whether the request counted against your account |
 | `serviceUnavailable` | `bool` | hCaptcha could not be reached or answered unusably |
-| `rejectedBy` | `?string` | `hostname-mismatch` or `score-too-high` when a local assertion rejected an otherwise genuine token |
+| `rejectedBy` | `?string` | `hostname-mismatch`, `hostname-unknown` or `score-too-high` when a local assertion rejected an otherwise genuine token |
 
-Helper methods: `passed()`, `failed()`, `hasErrorCode(string $code)`, `tokenAlreadyUsed()`, `tokenMissing()`, `isConfigurationError()`, `messageKey()`, plus `toArray()`/`jsonSerialize()`.
+Helper methods: `passed()`, `failed()`, `hasErrorCode(string $code)`, `tokenAlreadyUsed()`, `tokenExpired()`, `tokenMalformed()`, `tokenMissing()`, `isConfigurationError()`, `messageKey()`, plus `toArray()`/`jsonSerialize()`.
 
-`passed()` is deliberately not the same thing as hCaptcha saying yes: a genuine token minted for the wrong hostname, or scoring above `max_score`, is `success: true` from hCaptcha but `passed(): false` here, with `rejectedBy` set.
+`success` and `accepted` differ in exactly two situations. A genuine token minted for the wrong hostname, or scoring above `max_score`, is `success: true` and `accepted: false` with `rejectedBy` set. An outage under `fail_open` is `success: false` and `accepted: true` with `serviceUnavailable` set.
+
+Error codes follow [hCaptcha's siteverify table](https://docs.hcaptcha.com/#siteverify-error-codes-table). A spent token is `already-seen-response`; `token-already-used` was this package's own 1.x name for it and is still recognised by `tokenAlreadyUsed()`. A token over `max_token_length` gets the package-specific code `token-too-long` and never reaches hCaptcha.
+
+## Upgrading from 1.x
+
+2.0.0 changes behaviour in four places. Each is a correctness fix; none needs a code change for the common case of one form guarded by the rule and/or the middleware.
+
+- **`VerificationResult::success` is now hCaptcha's verdict only.** Read `accepted` (or call `passed()`) for the final answer. In 1.x a local rejection overwrote `success` with `false`; now it leaves `success` as `true` and sets `accepted: false`. Anything that branched on `->success` should branch on `->passed()`.
+- **The audit table has a new `accepted` column.** Run `php artisan migrate`. If you published the migrations, publish again with `php artisan vendor:publish --tag=hcaptcha-migrations`. The `failed()` model scope now filters on `accepted`.
+- **Memoization is scoped to the executing Livewire component.** Two components validating the same property name in one batched request no longer share a verdict. The middleware and the rule on the same field in a plain form still collapse to one call. If you called `HCaptcha::verify($token, $ip, 'some-scope')` with your own scope string, that still works and now means "field".
+- **Error codes are hCaptcha's.** `tokenAlreadyUsed()` now matches `already-seen-response`; `token-already-used` is kept as an alias. `expired-input-response` reports the expired message; `invalid-input-response` no longer does. `isConfigurationError()` recognises `sitekey-secret-mismatch`, `bad-request` and the dummy-passcode codes and no longer lists codes hCaptcha never returns.
+- **An install that relied on 1.x rejecting an unreported hostname should set `HCAPTCHA_HOSTNAMES_STRICT=true`.** A missing or `not-provided` hostname now passes with a warning by default; the authoritative origin control is the domain allowlist on the sitekey in the hCaptcha dashboard, not this check.
+
+Two defaults changed without changing behaviour: `retries` now counts *additional* attempts and defaults to `0` (1.x's default of `1` also made one attempt), and the "hostname check inactive" error is logged once per process rather than once per verification. New opt-ins: `hostnames_strict` and `logging.log_oversized_token`, both `false`.
 
 ## Audit trail
 
@@ -373,13 +397,13 @@ Setting `retention_days` to `0` disables pruning; the command exits with a warni
 
 ## Fail-open vs fail-closed
 
-By default (`fail_open` = `false`), an hCaptcha outage — an unreachable endpoint, a non-2xx response, or an unparseable body — fails **closed**: `VerificationResult::unavailable()` reports `success: false`, so the form is rejected. Setting `HCAPTCHA_FAIL_OPEN=true` trades that away and accepts the submission instead, tagging the result with `error-codes: ['service-unavailable']` and `serviceUnavailable: true` so you can still detect it happened. The outage itself is always logged via the application logger (`warning`), regardless of which way it fails.
+By default (`fail_open` = `false`), an hCaptcha outage — an unreachable endpoint, a non-2xx response, or an unparseable body — fails **closed**: `VerificationResult::unavailable()` reports `accepted: false`, so the form is rejected. Setting `HCAPTCHA_FAIL_OPEN=true` accepts the submission instead: the result is `accepted: true` with `success: false`, `error-codes: ['service-unavailable']` and `serviceUnavailable: true`, so you can still detect it happened, and the hostname and score assertions are skipped because there is no response to assert against. A provider rejection is never turned into acceptance by fail-open. The outage itself is always logged via the application logger (`warning`), regardless of which way it fails.
 
 ## Known limitation: repeated invocations inside one Livewire request
 
-A verdict is memoized per `(token, scope)`, where scope is the validated attribute or field name. That bounds a solved token to the field it was solved for, so one captcha cannot authorise a *different* field in the same request.
+A verdict is memoized per `(token, field, action, expected sitekey)`, where the action is the executing Livewire component. That bounds a solved token to the field, component and sitekey it was solved for, so one captcha cannot authorise a *different* field, a *different* component, or a *different* sitekey in the same request.
 
-It does **not** bound how many times the *same* field is submitted within one request. Livewire processes many components per HTTP request, so a client that replays the same component snapshot repeatedly in one batch can have a single solved captcha accepted by every replay — they all share the same scope, which is indistinguishable from the legitimate case of the rule and the middleware both checking that field.
+It does **not** bound how many times the *same* field on the *same* component is submitted within one request. A client that replays the same component snapshot repeatedly in one batch can have a single solved captcha accepted by every replay — they share the same memo key, which is indistinguishable from the legitimate case of the rule and the middleware both checking that field.
 
 Closing this properly needs a per-invocation boundary, which the package cannot see from inside a validation rule. Until then:
 

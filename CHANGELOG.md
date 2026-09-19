@@ -4,6 +4,33 @@ All notable changes to `core45/laravel-h-captcha` are documented in this file, i
 [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## 2.0.0 - Unreleased
+
+### Changed
+
+- `VerificationResult` gained `accepted`, the package's final answer, which `passed()` and `failed()` now use. `success` is hCaptcha's own verdict and is never rewritten: a local rejection keeps `success: true` and sets `accepted: false`; an accepted outage under `fail_open` is `success: false`, `accepted: true`. `toArray()` includes `accepted`.
+- `Verifier::verify()` accepts `string|VerificationContext|null` as its third parameter. A string still means the field name. `Core45\HCaptcha\Support\VerificationContext` carries the field, the protected action and the expected sitekey, and the memo is keyed on all three.
+- `Rules\HCaptcha` derives the protected action from the executing Livewire component, so two components validating the same property name in one batched request no longer share a verdict. It also accepts `sitekey:` and `action:` constructor arguments.
+- Error-code predicates follow hCaptcha's documented table. `tokenAlreadyUsed()` matches `already-seen-response` and `invalid-or-already-seen-response` (`token-already-used` kept as an alias); new `tokenExpired()` and `tokenMalformed()`; `isConfigurationError()` recognises `missing-input-secret`, `invalid-input-secret`, `sitekey-secret-mismatch`, `bad-request`, `not-using-dummy-passcode` and `not-using-dummy-secret`, and no longer lists `bad-secret`, `no-such-user`, `invalid-sitekey` or `sitekey-mismatch`, which hCaptcha does not return.
+- An oversized token is reported as `token-too-long` and the generic failure message, not as expired.
+- `retries` counts additional attempts and defaults to `0`. The 1.x default of `1` was passed straight to the HTTP client's total-attempt count, so it also made one attempt.
+- The "hostname check is inactive" error is logged once per process.
+- `HCaptchaManager::configured()` accepts an override; the Blade component renders with an explicit `sitekey` when no global key is set and degrades instead of throwing when the override is a placeholder.
+
+### Added
+
+- `hostnames_strict` (`HCAPTCHA_HOSTNAMES_STRICT`, default `false`). A response whose hostname is missing or `not-provided` passes with a `warning` by default, because hCaptcha documents the hostname as browser-derived and optional; strict mode rejects it with `rejectedBy: hostname-unknown`. An install that relied on 1.x rejecting an unreported hostname should set `HCAPTCHA_HOSTNAMES_STRICT=true`; the authoritative origin control is the domain allowlist on the sitekey in the hCaptcha dashboard, not this check.
+- `logging.log_oversized_token` (`HCAPTCHA_LOG_OVERSIZED_TOKEN`, default `false`).
+- Migration `2026_09_19_000000_add_accepted_to_hcaptcha_verifications_table`, adding an indexed `accepted` column backfilled from `success`. `HCaptchaVerification::failed()` now filters on it; new `rejectedLocally()` scope.
+- The Filament field passes its `sitekey()` override to the validation rule, so verification is sent the key the widget was rendered with.
+- `hcaptcha` middleware accepts an optional second parameter, the sitekey the widget was rendered with (`hcaptcha:h-captcha-response,<sitekey>`), so it shares a verdict with a rule constructed with the same `sitekey:`.
+
+### Fixed
+
+- `fail_open` did nothing when a hostname policy was configured, which is the default: the outage verdict had no hostname and the hostname check rejected it. Local assertions are now skipped for a service-unavailable verdict. A provider rejection is still never accepted.
+- `sitekey-secret-mismatch` is now logged as a configuration error instead of failing visitors silently.
+- The middleware reads a configured field name containing a dot as a literal key rather than a nested path.
+
 ## 1.0.0 - 2026-09-17
 
 ### Added
