@@ -414,6 +414,34 @@ Closing this properly needs a per-invocation boundary, which the package cannot 
 
 Stated plainly because the alternative — implying one captcha equals one submission — would be untrue.
 
+## Content Security Policy
+
+hCaptcha needs a few directives allowed. `HCaptchaManager::cspDirectives()` (also `HCaptcha::cspDirectives()` on the facade) returns them, so you can feed them into whatever builds your policy header rather than retyping the origins:
+
+```php
+HCaptchaManager::cspDirectives();
+// [
+//     'script-src'  => ['https://hcaptcha.com', 'https://*.hcaptcha.com'],
+//     'frame-src'   => ['https://hcaptcha.com', 'https://*.hcaptcha.com'],
+//     'style-src'   => ['https://hcaptcha.com', 'https://*.hcaptcha.com'],
+//     'connect-src' => ['https://hcaptcha.com', 'https://*.hcaptcha.com'],
+// ]
+```
+
+The wildcard subdomain is deliberate: hCaptcha rotates its asset subdomain by region and over time, so pinning a specific one will eventually break.
+
+If your `script-src` also uses a nonce (no `'unsafe-inline'`), register a resolver so the widget's two `<script>` tags carry it:
+
+```php
+use Core45\HCaptcha\HCaptchaManager;
+
+HCaptchaManager::nonceUsing(fn (): ?string => request()->attributes->get('csp-nonce'));
+```
+
+With no resolver registered, the package falls back to Laravel's own Vite nonce (`Vite::useCspNonce()`) if one was set for the request, and otherwise emits no `nonce` attribute at all.
+
+**Limitation for widgets rendered inside a Livewire update.** A widget whose first appearance on the page is a plain Livewire component update — a modal opened after mount, for instance — is picked up by a `@script` fallback, because a `<script>` tag delivered through Livewire's DOM patch never executes. Livewire evaluates the content of `@script` through a function constructor, and no nonce can authorise that. Under a strict policy without `'unsafe-eval'`, that fallback cannot run, and the widget will not render in that case. This is a Livewire requirement, not something hCaptcha asks for — a page that never renders the widget for the first time inside a Livewire update (full loads and `wire:navigate` transitions only) does not need `'unsafe-eval'` at all.
+
 ## Translations
 
 22 locales ship in `resources/lang`: `bg`, `cs`, `de`, `el`, `en`, `es`, `et`, `fi`, `fr`, `hr`, `hu`, `it`, `lt`, `lv`, `nl`, `pl`, `pt`, `sk`, `sl`, `sq`, `sv`, `uk`.

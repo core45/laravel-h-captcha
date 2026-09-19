@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Core45\HCaptcha;
 
+use Closure;
 use Core45\HCaptcha\Contracts\Verifier;
 use Core45\HCaptcha\Exceptions\MissingSitekeyException;
 use Core45\HCaptcha\Support\LivewireContext;
@@ -11,6 +12,7 @@ use Core45\HCaptcha\Support\VerificationContext;
 use Core45\HCaptcha\Support\VerificationResult;
 use Illuminate\Contracts\Config\Repository;
 use Illuminate\Contracts\Foundation\Application;
+use Illuminate\Support\Facades\Vite;
 use Illuminate\Support\HtmlString;
 use InvalidArgumentException;
 use RuntimeException;
@@ -346,6 +348,70 @@ class HCaptchaManager
             '__NAMESPACE__' => $this->namespaceName(),
             '__CALLBACK__' => $this->callbackName(),
         ]));
+    }
+
+    /**
+     * Origins hCaptcha requires in a Content Security Policy. Never list a
+     * specific asset subdomain: hCaptcha rotates them by region and over time.
+     *
+     * @var list<string>
+     */
+    public const CSP_SOURCES = ['https://hcaptcha.com', 'https://*.hcaptcha.com'];
+
+    /**
+     * Resolves the per-request nonce for the two script tags. Static so an
+     * application registers it once in a service provider; the closure itself
+     * reads per-request state, which is why it is a closure and not a value.
+     *
+     * @var (Closure(): ?string)|null
+     */
+    protected static ?Closure $nonceResolver = null;
+
+    /**
+     * @param  (Closure(): ?string)|null  $resolver
+     */
+    public static function nonceUsing(?Closure $resolver): void
+    {
+        static::$nonceResolver = $resolver;
+    }
+
+    /**
+     * The nonce for this request: the registered resolver, else Laravel's
+     * Vite nonce when one was set with Vite::useCspNonce(), else none.
+     */
+    public function nonce(): ?string
+    {
+        $nonce = static::$nonceResolver !== null
+            ? (static::$nonceResolver)()
+            : (class_exists(\Illuminate\Foundation\Vite::class) ? Vite::cspNonce() : null);
+
+        return is_string($nonce) && $nonce !== '' ? $nonce : null;
+    }
+
+    /**
+     * ` nonce="..."` (leading space) or an empty string, escaped, for the
+     * script tags.
+     */
+    public function nonceAttribute(): HtmlString
+    {
+        $nonce = $this->nonce();
+
+        return new HtmlString($nonce === null ? '' : ' nonce="'.e($nonce).'"');
+    }
+
+    /**
+     * The directives an application must allow for the widget to load.
+     *
+     * @return array<string, list<string>>
+     */
+    public static function cspDirectives(): array
+    {
+        return [
+            'script-src' => self::CSP_SOURCES,
+            'frame-src' => self::CSP_SOURCES,
+            'style-src' => self::CSP_SOURCES,
+            'connect-src' => self::CSP_SOURCES,
+        ];
     }
 
     /**

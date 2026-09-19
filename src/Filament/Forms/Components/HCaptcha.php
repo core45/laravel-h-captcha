@@ -162,6 +162,11 @@ class HCaptcha extends Field
         return $this->manager()->namespaceName();
     }
 
+    public function getNonceAttribute(): HtmlString
+    {
+        return $this->manager()->nonceAttribute();
+    }
+
     public function shouldRenderScript(): bool
     {
         return $this->manager()->scriptEnabled();

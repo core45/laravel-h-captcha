@@ -14,6 +14,7 @@
                 'scriptUrl' => $scriptUrl(),
                 'bootstrap' => $bootstrapScript(),
                 'namespaceName' => $namespaceName(),
+                'nonceAttribute' => $nonceAttribute(),
             ])
         @endonce
     @endif

@@ -8,6 +8,7 @@
                 'scriptUrl' => $getScriptUrl(),
                 'bootstrap' => $getBootstrapScript(),
                 'namespaceName' => $getNamespaceName(),
+                'nonceAttribute' => $getNonceAttribute(),
             ])
         @endonce
     @endif

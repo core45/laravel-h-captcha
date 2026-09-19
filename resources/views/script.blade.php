@@ -5,10 +5,13 @@
     wire:navigate from re-running either tag when the next page carries the
     same ones, so the SDK loads once per visit. data-hcaptcha-bootstrap and
     data-hcaptcha-sdk mark each tag for the @script fallback below to find.
+    $nonceAttribute carries the application's CSP nonce, if one is registered
+    via HCaptchaManager::nonceUsing() or set through Vite::useCspNonce(); the
+    fallback below reads it back off these tags for its clones.
 --}}
-<script data-navigate-once data-hcaptcha-bootstrap>{!! $bootstrap !!}</script>
+<script{!! $nonceAttribute !!} data-navigate-once data-hcaptcha-bootstrap>{!! $bootstrap !!}</script>
 
-<script src="{{ $scriptUrl }}" async defer data-navigate-once data-hcaptcha-sdk></script>
+<script src="{{ $scriptUrl }}" async defer data-navigate-once data-hcaptcha-sdk{!! $nonceAttribute !!}></script>
 
 @if (isset($this))
     {{--

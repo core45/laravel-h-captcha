@@ -114,6 +114,11 @@ class HCaptcha extends Component
         return $this->manager->namespaceName();
     }
 
+    public function nonceAttribute(): HtmlString
+    {
+        return $this->manager->nonceAttribute();
+    }
+
     public function render(): View
     {
         /** @var view-string $view */

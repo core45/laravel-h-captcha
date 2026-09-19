@@ -22,6 +22,9 @@ use Illuminate\Support\Facades\Facade;
  * @method static string callbackName()
  * @method static string namespaceName()
  * @method static \Illuminate\Support\HtmlString bootstrapScript()
+ * @method static string|null nonce()
+ * @method static \Illuminate\Support\HtmlString nonceAttribute()
+ * @method static array<string, list<string>> cspDirectives()
  *
  * @see HCaptchaManager
  */
