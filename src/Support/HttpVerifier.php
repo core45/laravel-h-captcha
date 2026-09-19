@@ -190,11 +190,13 @@ final class HttpVerifier implements Verifier
 
         $payload = $response->json();
 
-        // A non-2xx status with a decodable siteverify body is still hCaptcha's
-        // verdict (a 400 with `bad-request`, for instance), and it must fail
-        // closed like any other rejection. Only a body we cannot read as a
-        // verdict is an outage, because there is no verdict to apply.
-        if (is_array($payload) && array_key_exists('success', $payload)) {
+        // Any decodable 2xx body is hCaptcha's verdict, including one with no
+        // `success` key at all: fromResponse() reads that as a rejection, which
+        // is the fail-closed answer a malformed success response must get. A
+        // non-2xx body counts as a verdict only when it carries `success`
+        // (a 400 with `bad-request`, for instance); anything else non-2xx is an
+        // outage, because there is no verdict to apply.
+        if (is_array($payload) && (! $response->failed() || array_key_exists('success', $payload))) {
             if ($response->failed()) {
                 $this->logger->warning('hCaptcha verification returned an error status with a verdict body.', [
                     'status' => $response->status(),

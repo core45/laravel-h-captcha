@@ -269,6 +269,21 @@ it('never turns a provider rejection into acceptance under fail-open', function 
     '400' => 400,
 ]);
 
+it('fails closed on a 2xx body that carries no verdict at all, even under fail-open', function (array $body): void {
+    config()->set('hcaptcha.fail_open', true);
+    Http::fake([
+        'api.hcaptcha.com/*' => Http::response($body, 200),
+    ]);
+
+    $result = verifier()->verify(TestCase::TEST_TOKEN);
+
+    expect($result->passed())->toBeFalse()
+        ->and($result->serviceUnavailable)->toBeFalse();
+})->with([
+    'empty object' => [[]],
+    'error codes only' => [['error-codes' => ['invalid-input-response']]],
+]);
+
 it('logs a configuration error carried in a non-2xx verdict body', function (): void {
     config()->set('hcaptcha.hostnames', ['example.test']);
     Http::fake([

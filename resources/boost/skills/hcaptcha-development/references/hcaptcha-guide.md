@@ -152,7 +152,7 @@ at render time in `HCaptchaManager::locale()`, not baked into the config file.
 huge body to hCaptcha while holding a PHP worker for the whole timeout.
 
 `send_sitekey` includes the sitekey in the verification POST so hCaptcha itself rejects a token
-minted for a different site (`sitekey-mismatch`), in addition to any local `hostnames` check.
+minted for a different site (`sitekey-secret-mismatch`), in addition to any local `hostnames` check.
 
 **`hostnames` is the only defence against sitekey theft, which is why it now defaults to on.** A
 sitekey is public — it ships in your page HTML — so an attacker can embed *your* sitekey on *their*
@@ -566,8 +566,9 @@ Http::fake([
 ]);
 ```
 
-To test the failure path without mocking a bad response, fake a connection exception or a non-2xx
-status and assert against `hcaptcha.fail_open`.
+To test the failure path without mocking a bad response, fake a connection exception, or a non-2xx
+status with a non-JSON body; a non-2xx response that still carries a `success` key is applied as a
+verdict and never fails open. Assert against `hcaptcha.fail_open`.
 
 If testing the same token against more than one guard on the *same* field (e.g. rule + middleware in
 the same request), `Http::assertSentCount(1)` is the assertion that proves the memoization contract

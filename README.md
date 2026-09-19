@@ -355,7 +355,7 @@ Error codes follow [hCaptcha's siteverify table](https://docs.hcaptcha.com/#site
 
 ## Upgrading from 1.x
 
-2.0.0 changes behaviour in five places. Each is a correctness fix; none needs a code change for the common case of one form guarded by the rule and/or the middleware.
+2.0.0 changes behaviour in six places. Each is a correctness fix; none needs a code change for the common case of one form guarded by the rule and/or the middleware.
 
 - **`VerificationResult::success` is now hCaptcha's verdict only.** Read `accepted` (or call `passed()`) for the final answer. In 1.x a local rejection overwrote `success` with `false`; now it leaves `success` as `true` and sets `accepted: false`. Anything that branched on `->success` should branch on `->passed()`.
 - **The audit table has a new `accepted` column.** Run `php artisan migrate`. If you published the migrations, publish again with `php artisan vendor:publish --tag=hcaptcha-migrations`. The `failed()` model scope now filters on `accepted`.
@@ -378,7 +378,7 @@ The PII toggles (`logging.store_ip`, `logging.store_user_agent`, `logging.store_
 
 `logging.log_missing_token` also defaults to `false`. A submission with no token at all costs an attacker nothing and never reaches hCaptcha, so recording it by default would let anyone inflate the audit table with free, unauthenticated POSTs. Turn it on only alongside route throttling.
 
-`Core45\HCaptcha\Models\HCaptchaVerification` ships two scopes: `scopeFailed()` (`where('success', false)`) and `scopeForToken(string $tokenHash)` (attempts sharing a token hash — the fingerprint of a replay).
+`Core45\HCaptcha\Models\HCaptchaVerification` ships three scopes: `scopeFailed()` (`where('accepted', false)`), `scopeRejectedLocally()` (`whereNotNull('rejected_by')`, a genuine token a local assertion turned down), and `scopeForToken(string $tokenHash)` (attempts sharing a token hash — the fingerprint of a replay).
 
 Prune old rows with the console command, and schedule it:
 
