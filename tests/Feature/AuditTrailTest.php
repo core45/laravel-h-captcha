@@ -119,6 +119,29 @@ it('records a submission that carried no token when asked to', function (): void
         ->and($row->error_codes)->toBe(['missing-input-response']);
 });
 
+it('does not record an oversized token by default', function (): void {
+    config()->set('hcaptcha.max_token_length', 8);
+    fakeAccepted();
+
+    app(Verifier::class)->verify(str_repeat('x', 9));
+
+    expect(HCaptchaVerification::query()->count())->toBe(0);
+});
+
+it('records an oversized token when asked to, without hashing the body', function (): void {
+    config()->set('hcaptcha.max_token_length', 8);
+    config()->set('hcaptcha.logging.log_oversized_token', true);
+    fakeAccepted();
+
+    app(Verifier::class)->verify(str_repeat('x', 9));
+
+    $row = HCaptchaVerification::query()->sole();
+
+    expect($row->success)->toBeFalse()
+        ->and($row->token_hash)->toBeNull()
+        ->and($row->error_codes)->toBe(['token-too-long']);
+});
+
 it('writes one row per verification, not one per memoized read', function (): void {
     fakeAccepted();
 

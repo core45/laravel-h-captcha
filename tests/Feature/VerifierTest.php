@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 use Core45\HCaptcha\Contracts\Verifier;
 use Core45\HCaptcha\Exceptions\MissingSecretException;
+use Core45\HCaptcha\Support\HttpVerifier;
+use Core45\HCaptcha\Support\VerificationContext;
 use Core45\HCaptcha\Tests\TestCase;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request;
@@ -227,7 +229,119 @@ it('fails open only when explicitly configured to', function (): void {
     $result = verifier()->verify(TestCase::TEST_TOKEN);
 
     expect($result->passed())->toBeTrue()
+        ->and($result->success)->toBeFalse()
         ->and($result->serviceUnavailable)->toBeTrue();
+});
+
+/*
+ * The fail-open verdict has no hostname, because there was no response. The
+ * hostname check used to reject it, so HCAPTCHA_FAIL_OPEN=true was a no-op for
+ * every install that kept the default hostname policy.
+ */
+it('fails open even when a hostname policy is configured', function (): void {
+    config()->set('hcaptcha.fail_open', true);
+    config()->set('hcaptcha.hostnames', ['example.test']);
+    fakeSiteverify([], 503);
+
+    $result = verifier()->verify(TestCase::TEST_TOKEN);
+
+    expect($result->passed())->toBeTrue()
+        ->and($result->success)->toBeFalse()
+        ->and($result->serviceUnavailable)->toBeTrue()
+        ->and($result->rejectedBy)->toBeNull();
+});
+
+it('never turns a provider rejection into acceptance under fail-open', function (): void {
+    config()->set('hcaptcha.fail_open', true);
+    fakeSiteverify(['success' => false, 'error-codes' => ['already-seen-response']]);
+
+    expect(verifier()->verify(TestCase::TEST_TOKEN)->passed())->toBeFalse();
+});
+
+/*
+ * hCaptcha documents that the hostname is browser-derived, unsuitable for
+ * authentication, and may come back as `not-provided` under load. Rejecting it
+ * by default would drop genuine traffic during hCaptcha's own busy periods.
+ */
+it('accepts a token whose hostname hCaptcha did not provide, and says so', function (string $hostname): void {
+    config()->set('hcaptcha.hostnames', ['example.test']);
+    fakeSiteverify(['hostname' => $hostname]);
+
+    Log::shouldReceive('warning')
+        ->once()
+        ->withArgs(fn (string $message): bool => str_contains($message, 'did not report a hostname'));
+    Log::shouldReceive('error')->zeroOrMoreTimes();
+    Log::shouldReceive('info')->zeroOrMoreTimes();
+
+    $result = verifier()->verify(TestCase::TEST_TOKEN);
+
+    expect($result->passed())->toBeTrue()
+        ->and($result->rejectedBy)->toBeNull();
+})->with([
+    'not-provided' => 'not-provided',
+    'empty' => '',
+]);
+
+it('rejects an unreported hostname when the policy is strict', function (): void {
+    config()->set('hcaptcha.hostnames', ['example.test']);
+    config()->set('hcaptcha.hostnames_strict', true);
+    fakeSiteverify(['hostname' => 'not-provided']);
+
+    $result = verifier()->verify(TestCase::TEST_TOKEN);
+
+    expect($result->failed())->toBeTrue()
+        ->and($result->success)->toBeTrue()
+        ->and($result->rejectedBy)->toBe('hostname-unknown');
+});
+
+it('sends the sitekey carried by the context instead of the configured one', function (): void {
+    fakeSiteverify();
+
+    verifier()->verify(TestCase::TEST_TOKEN, null, new VerificationContext(
+        field: 'h-captcha-response',
+        sitekey: '20000000-ffff-ffff-ffff-000000000002',
+    ));
+
+    Http::assertSent(fn (Request $request): bool => $request['sitekey'] === '20000000-ffff-ffff-ffff-000000000002');
+});
+
+it('keeps verdicts apart when the same field is verified for two different actions', function (): void {
+    fakeSiteverify();
+
+    verifier()->verify(TestCase::TEST_TOKEN, null, new VerificationContext(field: 'data.captcha', action: 'App\\Livewire\\Contact#a'));
+    verifier()->verify(TestCase::TEST_TOKEN, null, new VerificationContext(field: 'data.captcha', action: 'App\\Livewire\\Newsletter#b'));
+
+    Http::assertSentCount(2);
+});
+
+it('does not let a different expected sitekey share a memoized verdict', function (): void {
+    fakeSiteverify();
+
+    verifier()->verify(TestCase::TEST_TOKEN, null, new VerificationContext(field: 'f', sitekey: 'key-a'));
+    verifier()->verify(TestCase::TEST_TOKEN, null, new VerificationContext(field: 'f', sitekey: 'key-b'));
+
+    Http::assertSentCount(2);
+});
+
+it('makes exactly one attempt by default', function (): void {
+    Http::fake([
+        'api.hcaptcha.com/*' => Http::response('', 503),
+    ]);
+
+    verifier()->verify(TestCase::TEST_TOKEN);
+
+    Http::assertSentCount(1);
+});
+
+it('retries as many additional times as configured', function (): void {
+    config()->set('hcaptcha.retries', 2);
+    Http::fake([
+        'api.hcaptcha.com/*' => Http::response('', 503),
+    ]);
+
+    verifier()->verify(TestCase::TEST_TOKEN);
+
+    Http::assertSentCount(3);
 });
 
 it('rejects a genuine token reported against an unexpected hostname', function (): void {
@@ -299,22 +413,25 @@ it('rejects a genuine token solved on another site using our own sitekey', funct
 });
 
 /*
- * Disabling the hostname check is allowed but must never be silent: it is the
- * only defence against a token solved elsewhere with our own public sitekey.
+ * Disabling the hostname check is allowed but must never be silent. It is
+ * logged once per process rather than on every verification: a deliberately
+ * multi-domain install should not have its error channel flooded at request
+ * rate.
  */
-it('logs an error on every verification while the hostname check is disabled', function (): void {
+it('logs an error once per process while the hostname check is disabled', function (): void {
+    HttpVerifier::forgetLoggedWarnings();
     config()->set('hcaptcha.hostnames', ['', null]);
     fakeSiteverify();
 
     Log::shouldReceive('error')
-        ->atLeast()
         ->once()
         ->withArgs(fn (string $message): bool => str_contains($message, 'hostname check is inactive'));
 
     Log::shouldReceive('warning')->zeroOrMoreTimes();
     Log::shouldReceive('info')->zeroOrMoreTimes();
 
-    verifier()->verify(TestCase::TEST_TOKEN);
+    verifier()->verify(TestCase::TEST_TOKEN, null, 'first');
+    verifier()->verify(TestCase::TEST_TOKEN, null, 'second');
 });
 
 it('rejects a token minted against a different sitekey and logs it as a configuration error', function (): void {

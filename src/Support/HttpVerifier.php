@@ -19,16 +19,24 @@ use Throwable;
  * The memoization is not an optimisation. hCaptcha tokens are single-use, and
  * a form guarded by both the validation rule and the middleware -- or a
  * Filament field that validates on update and again on submit -- would spend
- * the token on the first call and be told `token-already-used` on the second.
+ * the token on the first call and be told `already-seen-response` on the
+ * second.
  */
 final class HttpVerifier implements Verifier
 {
     /**
-     * Verdicts already obtained this request, keyed by token hash.
+     * Verdicts already obtained this request, keyed by token hash and scope.
      *
      * @var array<string, VerificationResult>
      */
     private array $memo = [];
+
+    /**
+     * Whether the "hostname check is inactive" error has been logged by this
+     * process. Static on purpose: the verifier is request-scoped, and the
+     * point is to log once per worker, not once per request.
+     */
+    private static bool $hostnameCheckInactiveLogged = false;
 
     public function __construct(
         private readonly HttpFactory $http,
@@ -37,10 +45,17 @@ final class HttpVerifier implements Verifier
         private readonly VerificationLogger $audit,
     ) {}
 
+    /**
+     * Reset the once-per-process log latches. For tests.
+     */
+    public static function forgetLoggedWarnings(): void
+    {
+        self::$hostnameCheckInactiveLogged = false;
+    }
+
     public function verify(?string $token, ?string $clientIp = null, string|VerificationContext|null $scope = null): VerificationResult
     {
-        // Temporary until Task 3: reduce a context to the 1.x field scope.
-        $scope = VerificationContext::from($scope)->field;
+        $context = VerificationContext::from($scope);
 
         if ($token === null || trim($token) === '') {
             $result = VerificationResult::missingToken();
@@ -61,28 +76,37 @@ final class HttpVerifier implements Verifier
                 'bytes' => strlen($token),
             ]);
 
-            return VerificationResult::oversizedToken();
+            $result = VerificationResult::oversizedToken();
+
+            // Same reasoning as the missing token: free to trigger, so opt-in.
+            // The hash is omitted -- hashing an attacker-sized body is work
+            // the size limit exists to avoid.
+            if ($this->config->get('hcaptcha.logging.log_oversized_token', false)) {
+                $this->audit->record($result, null, $clientIp);
+            }
+
+            return $result;
         }
 
-        // Keyed on scope as well as token: see the Verifier contract. An
-        // unscoped memo lets one solved captcha authorise every component in a
-        // Livewire batch.
         $tokenHash = hash('sha256', $token);
 
         // No scope means no memoization. Sharing one anonymous bucket would let
         // a pass obtained for one action be reused by an unrelated one, so an
         // unscoped caller instead pays a real request and hCaptcha answers
-        // `token-already-used` on the second attempt -- which is correct for a
-        // single-use token.
-        $key = $scope === null || $scope === ''
+        // `already-seen-response` on the second attempt -- which is correct
+        // for a single-use token. The expected sitekey is part of the key too:
+        // a verdict obtained for one key must not vouch for another.
+        $scopeKey = $context->scope();
+
+        $key = $scopeKey === null
             ? null
-            : $tokenHash.'|'.$scope;
+            : $tokenHash.'|'.$scopeKey.'|'.($context->sitekey ?? '');
 
         if ($key !== null && array_key_exists($key, $this->memo)) {
             return $this->memo[$key];
         }
 
-        $result = $this->assert($this->call($token, $clientIp));
+        $result = $this->assert($this->call($token, $clientIp, $context));
 
         // The audit row records the token hash alone. The scope is a memo
         // concern; mixing it in would break replay correlation across scopes.
@@ -112,7 +136,7 @@ final class HttpVerifier implements Verifier
      * Perform the siteverify request, converting any transport failure into an
      * unavailable verdict rather than letting it escape into the form handler.
      */
-    private function call(string $token, ?string $clientIp): VerificationResult
+    private function call(string $token, ?string $clientIp, VerificationContext $context): VerificationResult
     {
         $secret = $this->config->get('hcaptcha.secret');
 
@@ -124,29 +148,37 @@ final class HttpVerifier implements Verifier
         }
 
         /** @var string $secret */
-        $payload = [
+        $body = [
             'secret' => trim($secret),
             'response' => $token,
         ];
 
         if ($clientIp !== null && $clientIp !== '') {
-            $payload['remoteip'] = $clientIp;
+            $body['remoteip'] = $clientIp;
         }
 
-        $sitekey = $this->config->get('hcaptcha.sitekey');
+        // The context's sitekey wins: it is the key the widget was rendered
+        // with, supplied by server code. hCaptcha answers
+        // `sitekey-secret-mismatch` if the token was minted for another key.
+        $sitekey = $context->sitekey ?? $this->config->get('hcaptcha.sitekey');
 
         if ($this->config->get('hcaptcha.send_sitekey', true) && is_string($sitekey) && $sitekey !== '') {
-            $payload['sitekey'] = $sitekey;
+            $body['sitekey'] = $sitekey;
         }
 
         try {
             $response = $this->http
                 ->asForm()
                 ->timeout(max(1, (int) $this->config->get('hcaptcha.timeout', 10)))
-                ->retry(max(1, (int) $this->config->get('hcaptcha.retries', 1)), 150, throw: false)
+                // retry() counts total attempts, so the configured number of
+                // *additional* attempts is offset by one. Retrying a
+                // single-use token is a gamble: if the first attempt reached
+                // hCaptcha and only the reply was lost, the retry is told
+                // `already-seen-response`. Hence the default of zero.
+                ->retry(max(1, (int) $this->config->get('hcaptcha.retries', 0) + 1), 150, throw: false)
                 ->post(
                     (string) $this->config->get('hcaptcha.endpoint', 'https://api.hcaptcha.com/siteverify'),
-                    $payload,
+                    $body,
                 );
         } catch (Throwable $exception) {
             $this->logger->warning('hCaptcha verification could not reach the service.', [
@@ -181,14 +213,33 @@ final class HttpVerifier implements Verifier
      */
     private function assert(VerificationResult $result): VerificationResult
     {
-        if ($result->failed()) {
+        // An outage verdict carries no hostname and no score. Under fail-open
+        // it is accepted as a matter of policy; under fail-closed it is
+        // already rejected. Either way there is nothing to assert against.
+        if ($result->serviceUnavailable || $result->failed()) {
             return $result;
         }
 
         $hostnames = $this->allowedHostnames();
 
-        if ($hostnames !== [] && ! in_array(mb_strtolower((string) $result->hostname), $hostnames, true)) {
-            return $result->rejectedLocally('hostname-mismatch');
+        if ($hostnames !== []) {
+            $hostname = mb_strtolower((string) $result->hostname);
+
+            if ($hostname === '' || $hostname === 'not-provided') {
+                // hCaptcha documents the hostname as browser-derived and
+                // optional: it may be `not-provided` under load. Rejecting it
+                // by default would drop genuine traffic during hCaptcha's own
+                // busy periods, so this is opt-in.
+                if ($this->config->get('hcaptcha.hostnames_strict', false)) {
+                    return $result->rejectedLocally('hostname-unknown');
+                }
+
+                $this->logger->warning('hCaptcha did not report a hostname for this token; the hostname check was skipped.', [
+                    'hostname' => $result->hostname,
+                ]);
+            } elseif (! in_array($hostname, $hostnames, true)) {
+                return $result->rejectedLocally('hostname-mismatch');
+            }
         }
 
         $maxScore = $this->config->get('hcaptcha.max_score');
@@ -229,12 +280,13 @@ final class HttpVerifier implements Verifier
 
         // Any route to an empty list disables the check, including an unset
         // APP_URL or a bare host with no scheme (parse_url returns null for
-        // those). It must never be silent: this is the only defence against a
-        // token solved elsewhere with our own public sitekey.
-        if ($usable === []) {
+        // those). It must not be silent, but once per process is enough.
+        if ($usable === [] && ! self::$hostnameCheckInactiveLogged) {
+            self::$hostnameCheckInactiveLogged = true;
+
             $this->logger->error(
                 'hCaptcha hostname check is inactive: hcaptcha.hostnames resolved to nothing usable. '
-                .'Set HCAPTCHA_HOSTNAMES, or an APP_URL that includes a scheme.'
+                .'Set HCAPTCHA_HOSTNAMES, or an APP_URL that includes a scheme. Logged once per process.'
             );
         }
 
@@ -243,14 +295,16 @@ final class HttpVerifier implements Verifier
 
     /**
      * An outage fails closed unless the application has opted into fail-open.
+     * Even then, `success` stays false: hCaptcha never said yes.
      */
     private function unavailable(): VerificationResult
     {
         if ($this->config->get('hcaptcha.fail_open', false)) {
             return new VerificationResult(
-                success: true,
+                success: false,
                 errorCodes: ['service-unavailable'],
                 serviceUnavailable: true,
+                accepted: true,
             );
         }
 

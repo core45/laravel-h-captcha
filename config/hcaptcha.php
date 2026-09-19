@@ -49,7 +49,11 @@ return [
 
     'timeout' => (int) env('HCAPTCHA_TIMEOUT', 10),
 
-    'retries' => (int) env('HCAPTCHA_RETRIES', 1),
+    // Additional attempts after the first, on a transport error or non-2xx
+    // status. 0 means one attempt. Retrying a single-use token is a gamble:
+    // if the first attempt reached hCaptcha and only the reply was lost, the
+    // retry is told already-seen-response.
+    'retries' => (int) env('HCAPTCHA_RETRIES', 0),
 
     /*
     | Tokens longer than this are rejected without an HTTP call. hCaptcha tokens
@@ -78,35 +82,43 @@ return [
     | Response assertions
     |--------------------------------------------------------------------------
     |
-    | send_sitekey  Include the sitekey in the verification request so hCaptcha
-    |               itself rejects a token minted against a *different* sitekey.
-    | hostnames     Hostnames the response is allowed to report.
-    | max_score     Publisher/Pro accounts return a *risk* score where higher is
-    |               more bot-like -- the inverse of reCAPTCHA v3. null skips the
-    |               check. Accounts without scoring never return the field.
+    | send_sitekey      Include the sitekey in the verification request so
+    |                   hCaptcha itself rejects a token minted against a
+    |                   different sitekey (sitekey-secret-mismatch).
+    | hostnames         Hostnames the response is allowed to report.
+    | hostnames_strict  Also reject a response whose hostname is missing or
+    |                   `not-provided`.
+    | max_score         Enterprise accounts return a *risk* score where higher
+    |                   is more bot-like -- the inverse of reCAPTCHA v3. null
+    |                   skips the check. Accounts without scoring never return
+    |                   the field.
     |
-    | The hostname check is the only thing that stops the following attack, and
-    | it is why it defaults to on rather than off:
+    | Your sitekey is public -- it is in your HTML. An attacker can embed it on
+    | their own page, solve the challenge there (or buy solutions from a farm),
+    | and post the token to your form. siteverify answers `success: true`,
+    | because the token is genuine.
     |
-    |   Your sitekey is public -- it is in your HTML. An attacker embeds YOUR
-    |   sitekey on their own page, solves the challenge there (or buys solutions
-    |   from a captcha farm), and posts the token to your form. siteverify
-    |   answers `success: true` with `hostname: attacker.example`, because the
-    |   token is genuine. `send_sitekey` cannot help: it is the same sitekey, so
-    |   there is no mismatch to detect.
+    | Two layers limit that. The authoritative one is the domain allowlist on
+    | the sitekey in the hCaptcha dashboard, which is off by default for new
+    | sitekeys: turn it on. The second is this application-side check of the
+    | hostname hCaptcha reports. hCaptcha documents that hostname as derived
+    | from the browser and unsuitable for authentication, and says it may be
+    | `not-provided` under load, so treat this check as a policy that catches
+    | careless misuse, not as proof of origin.
     |
-    | So `hostnames` defaults to the host of APP_URL. Set HCAPTCHA_HOSTNAMES to a
+    | `hostnames` defaults to the host of APP_URL. Set HCAPTCHA_HOSTNAMES to a
     | comma-separated list for multi-domain installs. Setting it to an empty
-    | string disables the check, which is logged as an error on every
-    | verification. Also restrict the sitekey's hostnames in the hCaptcha
-    | dashboard -- that allowlist is off by default for new sitekeys, so both
-    | layers of the origin check are otherwise absent.
+    | string disables the check, which is logged as an error once per process.
+    | A missing or `not-provided` hostname passes with a warning unless
+    | HCAPTCHA_HOSTNAMES_STRICT is true.
     |
     */
 
     'send_sitekey' => (bool) env('HCAPTCHA_SEND_SITEKEY', true),
 
     'hostnames' => env('HCAPTCHA_HOSTNAMES', parse_url((string) env('APP_URL'), PHP_URL_HOST)),
+
+    'hostnames_strict' => (bool) env('HCAPTCHA_HOSTNAMES_STRICT', false),
 
     'max_score' => env('HCAPTCHA_MAX_SCORE') !== null
         ? (float) env('HCAPTCHA_MAX_SCORE')
@@ -172,6 +184,11 @@ return [
         // table with empty POSTs. Off by default; put `throttle` on the route
         // before turning it on.
         'log_missing_token' => (bool) env('HCAPTCHA_LOG_MISSING_TOKEN', false),
+
+        // Same reasoning: a token over max_token_length is rejected before
+        // any HTTP call, so recording it is free for the sender. Off by
+        // default. The row carries no token hash.
+        'log_oversized_token' => (bool) env('HCAPTCHA_LOG_OVERSIZED_TOKEN', false),
 
         // Rows older than this are removed by hcaptcha:prune. 0 disables
         // pruning and keeps every row.
