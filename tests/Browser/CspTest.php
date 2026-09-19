@@ -75,9 +75,15 @@ it('is blocked by the same policy without a nonce', function (): void {
  * Covers the claim that the @script fallback's clone actually carries the
  * nonce under a real, browser-enforced policy -- not just that the source
  * carries the nonce in a code read. The widget's first appearance here is
- * a Livewire update (the modal opens closed), so this can only pass if the
+ * a Livewire update (the modal starts closed), so this can only pass if the
  * cloned <script> tags in script.blade.php picked up the nonce from their
  * source tags and Chromium accepted it.
+ *
+ * assertPresent() is the assertion carrying that proof, not
+ * assertNoJavaScriptErrors(): a blocked script is reported as a policy
+ * violation rather than a script error, so dropping the nonce from the
+ * clone would leave the error assertion passing and only the missing
+ * checkbox would fail.
  */
 it('renders a widget whose first appearance is a Livewire update, under a strict policy with the nonce', function (): void {
     HCaptchaManager::nonceUsing(fn (): string => CSP_NONCE);
