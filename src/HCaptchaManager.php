@@ -13,6 +13,7 @@ use Illuminate\Contracts\Config\Repository;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Support\HtmlString;
 use InvalidArgumentException;
+use RuntimeException;
 
 /**
  * Presentation side of the package: everything the widget needs in order to
@@ -320,6 +321,31 @@ class HCaptchaManager
     public function namespaceName(): string
     {
         return $this->assertJsIdentifier('core45HCaptcha');
+    }
+
+    /**
+     * Browser event the validation rule dispatches through Livewire after a
+     * token was verified, so the widget that produced it can be reset.
+     */
+    public const RESET_EVENT = 'core45HCaptcha:reset';
+
+    /**
+     * The bootstrap JavaScript with the namespace and onload identifiers
+     * substituted. Kept in a .js file so it stays readable and lintable; the
+     * two identifiers are validated bare identifiers, never user input.
+     */
+    public function bootstrapScript(): HtmlString
+    {
+        $source = file_get_contents(__DIR__.'/../resources/js/bootstrap.js');
+
+        if ($source === false) {
+            throw new RuntimeException('Unable to read the hCaptcha bootstrap script.');
+        }
+
+        return new HtmlString(strtr($source, [
+            '__NAMESPACE__' => $this->namespaceName(),
+            '__CALLBACK__' => $this->callbackName(),
+        ]));
     }
 
     /**

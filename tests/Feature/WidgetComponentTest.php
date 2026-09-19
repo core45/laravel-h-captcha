@@ -221,3 +221,32 @@ it('scopes generated ids to the Livewire component that renders them', function 
 it('sanitises an explicit id into a safe DOM id', function (): void {
     expect(app(HCaptchaManager::class)->widgetId('contact form/captcha'))->toBe('contact-form-captcha');
 });
+
+it('emits the bootstrap with the namespace and callback substituted', function (): void {
+    $html = renderWidget();
+
+    expect($html)
+        ->toContain('window.core45HCaptcha = window.core45HCaptcha ||')
+        ->toContain('window.core45HCaptchaOnLoad = function')
+        ->toContain('new MutationObserver(')
+        ->not->toContain('__NAMESPACE__')
+        ->not->toContain('__CALLBACK__');
+});
+
+it('marks both script tags to run once across wire:navigate', function (): void {
+    expect(substr_count(renderWidget(), 'data-navigate-once'))->toBe(2);
+});
+
+it('renders a status element and the translated messages for the script', function (): void {
+    $html = renderWidget();
+
+    expect($html)
+        ->toContain('id="hcaptcha-page-1-status"')
+        ->toContain('role="status"')
+        ->toContain('data-message-error="'.e(__('hcaptcha::hcaptcha.widget_error')).'"')
+        ->toContain('data-message-pending="'.e(__('hcaptcha::hcaptcha.widget_pending')).'"');
+});
+
+it('exposes the reset event name the rule dispatches', function (): void {
+    expect(HCaptchaManager::RESET_EVENT)->toBe(app(HCaptchaManager::class)->namespaceName().':reset');
+});

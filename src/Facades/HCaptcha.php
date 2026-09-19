@@ -21,6 +21,7 @@ use Illuminate\Support\Facades\Facade;
  * @method static list<string> renderedWidgets()
  * @method static string callbackName()
  * @method static string namespaceName()
+ * @method static \Illuminate\Support\HtmlString bootstrapScript()
  *
  * @see HCaptchaManager
  */

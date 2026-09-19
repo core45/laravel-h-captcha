@@ -152,14 +152,9 @@ class HCaptcha extends Field
         return $this->manager()->scriptUrl($this->getLocale());
     }
 
-    public function getCallbackName(): string
+    public function getBootstrapScript(): HtmlString
     {
-        return $this->manager()->callbackName();
-    }
-
-    public function getNamespaceName(): string
-    {
-        return $this->manager()->namespaceName();
+        return $this->manager()->bootstrapScript();
     }
 
     public function shouldRenderScript(): bool

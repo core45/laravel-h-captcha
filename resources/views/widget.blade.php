@@ -12,8 +12,7 @@
         @once
             @include('hcaptcha::script', [
                 'scriptUrl' => $scriptUrl(),
-                'callbackName' => $callbackName(),
-                'namespaceName' => $namespaceName(),
+                'bootstrap' => $bootstrapScript(),
             ])
         @endonce
     @endif
@@ -27,6 +26,8 @@
             id="{{ $widgetId }}"
             data-hcaptcha
             data-hcaptcha-explicit
+            data-message-error="{{ __('hcaptcha::hcaptcha.widget_error') }}"
+            data-message-pending="{{ __('hcaptcha::hcaptcha.widget_pending') }}"
             {{ $attributeString() }}
         ></div>
     </div>
@@ -42,6 +43,9 @@
         data-hcaptcha-field="{{ $model ?? $fieldName() }}"
         @if ($model) wire:model="{{ $model }}" @endif
     >
+
+    {{-- Live region the bootstrap script writes pending/error feedback into. --}}
+    <p id="{{ $widgetId }}-status" class="hcaptcha-status" role="status" aria-live="polite" hidden></p>
 
     {{-- `$errors` is shared by the ShareErrorsFromSession middleware, so it is
          absent when this view is rendered outside the web group. Guard rather

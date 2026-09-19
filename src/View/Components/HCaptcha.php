@@ -104,14 +104,9 @@ class HCaptcha extends Component
         return $this->script && $this->manager->scriptEnabled();
     }
 
-    public function callbackName(): string
+    public function bootstrapScript(): HtmlString
     {
-        return $this->manager->callbackName();
-    }
-
-    public function namespaceName(): string
-    {
-        return $this->manager->namespaceName();
+        return $this->manager->bootstrapScript();
     }
 
     public function render(): View

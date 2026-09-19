@@ -19,4 +19,10 @@ return [
     // Accessible label rendered on the widget wrapper.
     'label' => 'Captcha',
 
+    // Shown by the widget when the challenge failed, was closed, or could not load.
+    'widget_error' => 'Captcha nije dovršena. Pokušajte ponovno.',
+
+    // Shown by the widget while an invisible challenge is being executed.
+    'widget_pending' => 'Provjera u tijeku, pričekajte…',
+
 ];

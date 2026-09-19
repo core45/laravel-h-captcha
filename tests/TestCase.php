@@ -6,6 +6,7 @@ namespace Core45\HCaptcha\Tests;
 
 use Core45\HCaptcha\HCaptchaServiceProvider;
 use Core45\HCaptcha\Tests\Fixtures\BrowserGuardedForm;
+use Core45\HCaptcha\Tests\Fixtures\BrowserModalComponent;
 use Core45\HCaptcha\Tests\Fixtures\HCaptchaFormComponent;
 use Filament\Actions\ActionsServiceProvider;
 use Filament\FilamentServiceProvider;
@@ -64,6 +65,7 @@ class TestCase extends Orchestra
         // Fixture components referenced by tag name inside fixture views.
         Livewire::component('hcaptcha-form-component', HCaptchaFormComponent::class);
         Livewire::component('browser-guarded-form', BrowserGuardedForm::class);
+        Livewire::component('browser-modal', BrowserModalComponent::class);
     }
 
     protected function getPackageProviders($app): array

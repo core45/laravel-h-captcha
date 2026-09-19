@@ -6,8 +6,7 @@
         @once
             @include('hcaptcha::script', [
                 'scriptUrl' => $getScriptUrl(),
-                'callbackName' => $getCallbackName(),
-                'namespaceName' => $getNamespaceName(),
+                'bootstrap' => $getBootstrapScript(),
             ])
         @endonce
     @endif
@@ -21,6 +20,8 @@
             id="{{ $getWidgetId() }}"
             data-hcaptcha
             data-hcaptcha-explicit
+            data-message-error="{{ __('hcaptcha::hcaptcha.widget_error') }}"
+            data-message-pending="{{ __('hcaptcha::hcaptcha.widget_pending') }}"
             {!! $getWidgetAttributeString() !!}
         ></div>
     </div>
@@ -35,4 +36,7 @@
         data-hcaptcha-field="{{ $getStatePath() }}"
         wire:model="{{ $getStatePath() }}"
     >
+
+    {{-- Live region the bootstrap script writes pending/error feedback into. --}}
+    <p id="{{ $getWidgetId() }}-status" class="hcaptcha-status" role="status" aria-live="polite" hidden></p>
 </x-dynamic-component>
