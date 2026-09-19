@@ -37,8 +37,11 @@ final class HttpVerifier implements Verifier
         private readonly VerificationLogger $audit,
     ) {}
 
-    public function verify(?string $token, ?string $clientIp = null, ?string $scope = null): VerificationResult
+    public function verify(?string $token, ?string $clientIp = null, string|VerificationContext|null $scope = null): VerificationResult
     {
+        // Temporary until Task 3: reduce a context to the 1.x field scope.
+        $scope = VerificationContext::from($scope)->field;
+
         if ($token === null || trim($token) === '') {
             $result = VerificationResult::missingToken();
 
