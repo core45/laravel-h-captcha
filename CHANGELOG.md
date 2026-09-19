@@ -34,7 +34,7 @@ All notable changes to `core45/laravel-h-captcha` are documented in this file, i
 - `HCaptchaManager::nonceUsing()`, `nonce()`, `nonceAttribute()`, `cspDirectives()` and `CSP_SOURCES`; the script tags carry a nonce from the resolver or `Vite::cspNonce()`.
 - `HCaptchaManager::bootstrapScript()`, `RESET_EVENT`; `widgetId()` accepts a `key`.
 - Translation keys `widget_error` and `widget_pending` in all locales.
-- `resources/js/fake-api.js`, a network-free stand-in for `api.js` used by the package's Playwright suite.
+- `resources/js/fake-api.js`, a network-free stand-in for `api.js` used by the package's Playwright suite. A consuming application can point `hcaptcha.script.url` at it (served from a route of their own) to drive browser tests without a live hCaptcha account; a first-class helper for wiring this up in consuming apps is under consideration.
 - Response inputs carry `data-hcaptcha-field`.
 
 ### Removed

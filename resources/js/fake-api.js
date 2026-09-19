@@ -1,7 +1,8 @@
 /*
  * A stand-in for https://js.hcaptcha.com/1/api.js used by the package's own
- * browser tests and by HCaptcha::fake() in a consuming application's browser
- * tests. It implements the part of the hCaptcha JS API the bootstrap script
+ * browser tests, and available to a consuming application's browser tests by
+ * pointing `hcaptcha.script.url` at this file served from a route of their
+ * own. It implements the part of the hCaptcha JS API the bootstrap script
  * calls, never contacts the network, and produces tokens shaped
  * `fake-token-<widgetId>-<n>`.
  *

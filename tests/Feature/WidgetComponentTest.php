@@ -178,7 +178,6 @@ it('warns the developer about a missing site key while debugging', function (): 
 });
 
 it('logs a misconfiguration warning once per process, not once per degraded widget', function (): void {
-    HCaptchaManager::forgetLoggedWarnings();
     config()->set('hcaptcha.sitekey', null);
     config()->set('app.debug', false);
 
@@ -194,7 +193,6 @@ it('logs a misconfiguration warning once per process, not once per degraded widg
 });
 
 it('does not log the misconfiguration warning while the debug notice already shows it', function (): void {
-    HCaptchaManager::forgetLoggedWarnings();
     config()->set('hcaptcha.sitekey', null);
     config()->set('app.debug', true);
 
@@ -204,7 +202,6 @@ it('does not log the misconfiguration warning while the debug notice already sho
 });
 
 it('does not log anything when configured() is queried on its own', function (): void {
-    HCaptchaManager::forgetLoggedWarnings();
     config()->set('hcaptcha.sitekey', null);
     config()->set('app.debug', false);
 

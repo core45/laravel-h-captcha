@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Core45\HCaptcha\Tests;
 
+use Core45\HCaptcha\HCaptchaManager;
 use Core45\HCaptcha\HCaptchaServiceProvider;
+use Core45\HCaptcha\Support\HttpVerifier;
 use Core45\HCaptcha\Tests\Fixtures\BladeRenderInsideLivewireComponent;
 use Core45\HCaptcha\Tests\Fixtures\BrowserGuardedForm;
 use Core45\HCaptcha\Tests\Fixtures\BrowserModalComponent;
@@ -57,6 +59,14 @@ class TestCase extends Orchestra
         // re-registers it as the singleton Livewire itself expects. Safe to
         // remove once upstream fixes filament/support's binding.
         $this->app->singleton(DataStore::class, DataStoreOverride::class);
+
+        // Both managers latch a "logged this once already" flag in a static
+        // property so the once-per-process warning survives across requests
+        // in production. Reset it before every test so a test that trips the
+        // latch (deliberately or not) never leaks state into a later test
+        // that depends on the warning firing again.
+        HCaptchaManager::forgetLoggedWarnings();
+        HttpVerifier::forgetLoggedWarnings();
 
         // Fixture views and anonymous components shared by Feature and
         // Browser tests: <x-hcaptcha-tests::layouts.app>, hcaptcha-tests::modal, ...

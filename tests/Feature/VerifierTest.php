@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use Core45\HCaptcha\Contracts\Verifier;
 use Core45\HCaptcha\Exceptions\MissingSecretException;
-use Core45\HCaptcha\Support\HttpVerifier;
 use Core45\HCaptcha\Support\VerificationContext;
 use Core45\HCaptcha\Tests\TestCase;
 use Illuminate\Http\Client\ConnectionException;
@@ -482,7 +481,6 @@ it('rejects a genuine token solved on another site using our own sitekey', funct
  * rate.
  */
 it('logs an error once per process while the hostname check is disabled', function (): void {
-    HttpVerifier::forgetLoggedWarnings();
     config()->set('hcaptcha.hostnames', ['', null]);
     fakeVerifierSiteverify();
 

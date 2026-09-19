@@ -343,7 +343,7 @@ HCaptcha::make() // field name defaults to config('hcaptcha.field')
 
 The field calls `->markAsRequired()` (an asterisk only — a UI cue) and carries the `HCaptcha` rule object out of the box; it does not call `->required()`, since the rule is already implicit and a `required()` rule would only compete with it for which message wins. It also calls `->dehydrated(false)` deliberately — the token is single-use and must never be persisted onto the model — but validation still runs against the raw form state before dehydration strips the value, so the captcha is still enforced on save.
 
-When no usable sitekey resolves the field renders no widget (a debug-only notice, like the Blade component) but stays in validation, so the form still fails closed. Widget ids are scoped to the Livewire component, so two forms with the same state path on one page do not collide.
+When no usable sitekey resolves the field renders no widget (a debug-only notice, like the Blade component) but stays in validation, so the form still fails closed. Widget ids are scoped to the Livewire component, so two forms with the same state path on one page do not collide: the id is `hcaptcha-<livewire-id>-<dom-safe-state-path>`, e.g. `hcaptcha-<livewire-id>-data-h-captcha-response` for a field bound to `data.h-captcha-response`.
 
 ## Verifying by hand
 
@@ -380,7 +380,7 @@ Error codes follow [hCaptcha's siteverify table](https://docs.hcaptcha.com/#site
 
 ## Upgrading from 1.x
 
-2.0.0 changes behaviour in six places. Each is a correctness fix; the common case of one form guarded by the rule and/or the middleware needs no code change, but a Livewire component should delete its manual `core45HCaptcha:reset` dispatch and a Livewire route should drop the middleware.
+2.0.0 changes behaviour in nine places. Each is a correctness fix; the common case of one form guarded by the rule and/or the middleware needs no code change, but a Livewire component should delete its manual `core45HCaptcha:reset` dispatch and a Livewire route should drop the middleware.
 
 - **`VerificationResult::success` is now hCaptcha's verdict only.** Read `accepted` (or call `passed()`) for the final answer. In 1.x a local rejection overwrote `success` with `false`; now it leaves `success` as `true` and sets `accepted: false`. Anything that branched on `->success` should branch on `->passed()`.
 - **The audit table has a new `accepted` column.** Run `php artisan migrate`. If you published the migrations, publish again with `php artisan vendor:publish --tag=hcaptcha-migrations`. The `failed()` model scope now filters on `accepted`.
@@ -388,12 +388,11 @@ Error codes follow [hCaptcha's siteverify table](https://docs.hcaptcha.com/#site
 - **Stacking the middleware on a Livewire update route no longer shares a verdict with the rule.** The rule scopes by the executing component; the middleware cannot, so the second check is told `already-seen-response`. Guard a Livewire form with the rule alone, which was always the documented setup.
 - **Error codes are hCaptcha's.** `tokenAlreadyUsed()` now matches `already-seen-response`; `token-already-used` is kept as an alias. `expired-input-response` reports the expired message; `invalid-input-response` no longer does. `isConfigurationError()` recognises `sitekey-secret-mismatch`, `bad-request` and the dummy-passcode codes and no longer lists codes hCaptcha never returns.
 - **An install that relied on 1.x rejecting an unreported hostname should set `HCAPTCHA_HOSTNAMES_STRICT=true`.** A missing or `not-provided` hostname now passes with a warning by default; the authoritative origin control is the domain allowlist on the sitekey in the hCaptcha dashboard, not this check.
-
-Two defaults changed without changing behaviour: `retries` now counts *additional* attempts and defaults to `0` (1.x's default of `1` also made one attempt), and the "hostname check inactive" error is logged once per process rather than once per verification. New opt-ins: `hostnames_strict` and `logging.log_oversized_token`, both `false`.
-
 - **Published views:** if you published `hcaptcha::script` or `hcaptcha::widget` in 1.x, re-publish them. The bootstrap now lives in `resources/js/bootstrap.js` and the widget view emits a status element and `data-hcaptcha-field`.
 - **Widget ids are deterministic** (`hcaptcha-page-N`, `hcaptcha-<livewire-id>-N`) instead of random; selectors that relied on the `hcaptcha-` prefix still match.
 - **`data-hcaptcha-model` is no longer emitted.**
+
+Two defaults changed without changing behaviour: `retries` now counts *additional* attempts and defaults to `0` (1.x's default of `1` also made one attempt), and the "hostname check inactive" error is logged once per process rather than once per verification. New opt-ins: `hostnames_strict` and `logging.log_oversized_token`, both `false`.
 
 ## Audit trail
 
@@ -514,7 +513,7 @@ $this->post('/contact', ['h-captcha-response' => 'any-token'])
 Http::assertSentCount(1); // the memoization guarantee: one token per field, one HTTP call
 ```
 
-Browser tests in a consuming app can point `hcaptcha.script.url` at the package's stub, `resources/js/fake-api.js` (served by a route of your own), which implements `render`, `execute`, `reset` and `getResponse` without the network and exposes `window.__fakeHCaptcha`. Phase 4's `HCaptcha::fake()` wires this up for you.
+Browser tests in a consuming app can point `hcaptcha.script.url` at the package's stub, `resources/js/fake-api.js` (served by a route of your own), which implements `render`, `execute`, `reset` and `getResponse` without the network and exposes `window.__fakeHCaptcha`.
 
 ## Versioning & License
 
