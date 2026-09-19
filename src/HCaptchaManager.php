@@ -85,12 +85,15 @@ class HCaptchaManager
     }
 
     /**
-     * Whether a site key is configured, without throwing. Lets a view degrade
-     * instead of taking the whole page down.
+     * Whether a usable site key is available, without throwing. Lets a view
+     * degrade instead of taking the whole page down. An explicit override is
+     * judged on its own: a placeholder override is "not configured" even when
+     * the global key is fine, because rendering the global key under a widget
+     * that asked for another would verify against the wrong key.
      */
-    public function configured(): bool
+    public function configured(?string $override = null): bool
     {
-        return self::isUsableCredential($this->config->get('hcaptcha.sitekey'));
+        return self::isUsableCredential($override ?? $this->config->get('hcaptcha.sitekey'));
     }
 
     /**

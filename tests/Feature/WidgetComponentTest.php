@@ -168,3 +168,20 @@ it('warns the developer about a missing site key while debugging', function (): 
 
     expect(renderWidget())->toContain('HCAPTCHA_SITEKEY is not set');
 });
+
+it('renders with an explicit sitekey when no global sitekey is configured', function (): void {
+    config()->set('hcaptcha.sitekey', null);
+
+    $html = renderWidget('<x-hcaptcha sitekey="20000000-ffff-ffff-ffff-000000000002" />');
+
+    expect($html)->toContain('data-sitekey="20000000-ffff-ffff-ffff-000000000002"');
+});
+
+it('degrades instead of throwing when the explicit sitekey is a placeholder', function (): void {
+    config()->set('app.debug', true);
+
+    $html = renderWidget('<x-hcaptcha sitekey="default_sitekey" />');
+
+    expect($html)->toContain('hcaptcha-misconfigured')
+        ->not->toContain('data-sitekey=');
+});

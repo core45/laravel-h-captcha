@@ -50,7 +50,7 @@ class HCaptcha extends Component
          */
         public array $options = [],
     ) {
-        $this->available = $manager->configured();
+        $this->available = $manager->configured($sitekey);
         $this->widgetId = $manager->widgetId($id);
 
         if ($this->available) {

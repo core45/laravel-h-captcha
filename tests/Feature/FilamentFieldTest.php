@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use Core45\HCaptcha\Tests\Fixtures\HCaptchaFormComponent;
+use Core45\HCaptcha\Tests\Fixtures\HCaptchaFormWithSitekeyComponent;
+use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Livewire\Livewire;
 
@@ -61,4 +63,15 @@ it('renders the widget markup with the explicit-mode and wire:ignore attributes'
     Livewire::test(HCaptchaFormComponent::class)
         ->assertSeeHtml('data-hcaptcha-explicit')
         ->assertSeeHtml('wire:ignore');
+});
+
+it('verifies against the sitekey the field was rendered with', function (): void {
+    fakeHCaptcha(success: true);
+
+    Livewire::test(HCaptchaFormWithSitekeyComponent::class)
+        ->fillForm(['h-captcha-response' => 'accepted-token'])
+        ->call('save')
+        ->assertHasNoFormErrors();
+
+    Http::assertSent(fn (Request $request): bool => $request['sitekey'] === '20000000-ffff-ffff-ffff-000000000002');
 });

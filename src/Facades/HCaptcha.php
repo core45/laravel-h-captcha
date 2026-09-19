@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\Facade;
 /**
  * @method static \Core45\HCaptcha\Support\VerificationResult verify(?string $token, ?string $clientIp = null, string|\Core45\HCaptcha\Support\VerificationContext|null $scope = null)
  * @method static string sitekey(?string $override = null)
- * @method static bool configured()
+ * @method static bool configured(?string $override = null)
  * @method static string fieldName()
  * @method static string|null locale(?string $override = null)
  * @method static bool scriptEnabled()

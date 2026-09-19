@@ -41,7 +41,10 @@ class HCaptcha extends Field
     {
         parent::setUp();
 
-        $this->rule(new HCaptchaRule);
+        // A closure, so the rule sees the sitekey set after make(). The
+        // sitekey the widget renders with and the one verification expects
+        // must be the same key, or hCaptcha answers sitekey-secret-mismatch.
+        $this->rule(fn (): HCaptchaRule => new HCaptchaRule(sitekey: $this->evaluate($this->sitekey)));
 
         // The rule itself is implicit (see Rules\HCaptcha), so it already
         // fires and reports hcaptcha::hcaptcha.missing on an empty or absent
