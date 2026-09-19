@@ -190,7 +190,8 @@ final class HttpVerifier implements Verifier
 
         $payload = $response->json();
 
-        // Any decodable 2xx body is hCaptcha's verdict, including one with no
+        // Any array body on a 2xx response, or a non-2xx body carrying a
+        // `success` key, is hCaptcha's verdict, including one with no
         // `success` key at all: fromResponse() reads that as a rejection, which
         // is the fail-closed answer a malformed success response must get. A
         // non-2xx body counts as a verdict only when it carries `success`

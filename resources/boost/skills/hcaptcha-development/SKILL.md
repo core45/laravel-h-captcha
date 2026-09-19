@@ -29,7 +29,7 @@ Use core45/laravel-h-captcha to add hCaptcha to a Laravel app. It uses Laravel's
 ## Core Concepts
 
 ### The single memoizing verifier — the most important rule
-**hCaptcha tokens are single-use.** All verification in this package goes through exactly one `Verifier` implementation, `Core45\HCaptcha\Support\HttpVerifier`, which memoizes the verdict per request by `hash('sha256', $token)` **and a scope** — `verify(?string $token, ?string $clientIp = null, string|VerificationContext|null $scope = null)`. A string scope is the field name; a `Core45\HCaptcha\Support\VerificationContext` also carries the protected action and the expected sitekey. The validation rule, the `hcaptcha` string rule, the route middleware, the Blade component's field, and the Filament form field are all thin callers of that same service — never call hCaptcha's `siteverify` endpoint directly, and never construct a second `Verifier`-like path. Stacking a rule and the middleware on the same field is safe in a plain form because they share a scope. Inside a Livewire request the rule also scopes by the executing component and the middleware cannot, so guard Livewire and Filament forms with the rule or the field alone; a Filament field that validates on update and again on submit still spends the token once because both checks run in the same component. Bypassing the shared verifier reintroduces the `token-already-used` bug this package exists to avoid.
+**hCaptcha tokens are single-use.** All verification in this package goes through exactly one `Verifier` implementation, `Core45\HCaptcha\Support\HttpVerifier`, which memoizes the verdict per request by `hash('sha256', $token)` **and a scope** — `verify(?string $token, ?string $clientIp = null, string|VerificationContext|null $scope = null)`. A string scope is the field name; a `Core45\HCaptcha\Support\VerificationContext` also carries the protected action and the expected sitekey. The validation rule, the `hcaptcha` string rule, the route middleware, the Blade component's field, and the Filament form field are all thin callers of that same service — never call hCaptcha's `siteverify` endpoint directly, and never construct a second `Verifier`-like path. Stacking a rule and the middleware on the same field is safe in a plain form because they share a scope. Inside a Livewire request the rule also scopes by the executing component and the middleware cannot, so guard Livewire and Filament forms with the rule or the field alone; a Filament field that validates on update and again on submit still spends the token once because both checks run in the same request and share the per-request memo. Bypassing the shared verifier reintroduces the `token-already-used` bug this package exists to avoid.
 
 The scope matters for a reason beyond convenience: the memoization is a safety mechanism, not a cache. Keyed on the token alone, one solved captcha would authorise every field checking it in the request — and Livewire can process up to 200 components in a single HTTP request. Always pass the attribute/field name as `$scope` when calling `verify()` directly; the rule and middleware already do this for you.
 
@@ -66,10 +66,7 @@ Route::post('/contact', Controller::class)->middleware(['throttle:10,1', 'hcaptc
 Throws `ValidationException` on failure — a 422 or redirect-with-errors, never a 500. Verifies every request it sees (no method allowlist), so keep it off any route that also serves the form's GET, and pair it with `throttle` since it does no rate limiting itself.
 
 ### Livewire
-Reset the widget after every submit (success or failure) or the next attempt fails with `token-already-used`:
-```php
-$this->dispatch('core45HCaptcha:reset');
-```
+The rule resets the widget whose token it verified after every submit (success or failure) by dispatching `core45HCaptcha:reset` with the validated field — don't dispatch it yourself. Keep `wire:ignore` on the widget container.
 
 ### Filament
 ```php
@@ -88,8 +85,10 @@ Enable with `HCAPTCHA_LOGGING=true`, migrate, and schedule `php artisan hcaptcha
 ## Do and Don't
 
 - **Do** route every verification through the shared `Verifier` (facade, rule, middleware, Filament field) — never call `siteverify` yourself.
-- **Do** reset the widget (`core45HCaptcha:reset` or `window.core45HCaptcha.reset()`) after every Livewire submit, success or failure.
+- **Don't** dispatch `core45HCaptcha:reset` yourself: the rule resets the widget whose token it verified. **Do** keep `wire:ignore` on the widget container.
 - **Do** use `HCaptcha::configured()` to let a view degrade instead of throwing when no sitekey is set.
+- **Do** use `size="invisible"` for an invisible widget; the bootstrap executes it on submit.
+- **Do** register `HCaptchaManager::nonceUsing()` under a strict CSP and allow `HCaptchaManager::cspDirectives()`.
 - **Don't** persist the captcha token to a model — it is single-use and already spent by the time validation passes.
 - **Don't** pair `new \Core45\HCaptcha\Rules\HCaptcha` with a `required` rule — it is implicit already, and `required` only steals its message.
 - **Don't** treat hCaptcha's `score` as a confidence score to maximize — it is a *risk* score, so `max_score` is a ceiling, not a floor.

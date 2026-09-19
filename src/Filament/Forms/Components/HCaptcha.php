@@ -172,6 +172,16 @@ class HCaptcha extends Field
         return $this->manager()->scriptEnabled();
     }
 
+    /**
+     * Whether a usable sitekey resolves for this field. When it does not the
+     * view renders no widget -- the same policy as the Blade component -- but
+     * the field stays in validation, so the form still fails closed.
+     */
+    public function isConfigured(): bool
+    {
+        return $this->manager()->configured($this->evaluate($this->sitekey));
+    }
+
     protected function manager(): HCaptchaManager
     {
         return app(HCaptchaManager::class);

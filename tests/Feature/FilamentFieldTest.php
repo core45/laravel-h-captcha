@@ -75,3 +75,39 @@ it('verifies against the sitekey the field was rendered with', function (): void
 
     Http::assertSent(fn (Request $request): bool => $request['sitekey'] === '20000000-ffff-ffff-ffff-000000000002');
 });
+
+it('renders no widget but still fails closed when no sitekey is configured', function (): void {
+    config()->set('hcaptcha.sitekey', null);
+    config()->set('app.debug', true);
+    fakeHCaptcha(success: true);
+
+    Livewire::test(HCaptchaFormComponent::class)
+        ->assertDontSeeHtml('data-hcaptcha-explicit')
+        ->assertSee('HCAPTCHA_SITEKEY is not set')
+        ->call('save')
+        ->assertHasFormErrors(['h-captcha-response' => __('hcaptcha::hcaptcha.missing')]);
+});
+
+it('renders nothing for the field in production when no sitekey is configured', function (): void {
+    config()->set('hcaptcha.sitekey', null);
+    config()->set('app.debug', false);
+
+    Livewire::test(HCaptchaFormComponent::class)
+        ->assertDontSeeHtml('data-hcaptcha-explicit')
+        ->assertDontSee('HCAPTCHA_SITEKEY is not set');
+});
+
+it('scopes the widget id to the Livewire component', function (): void {
+    fakeHCaptcha(success: true);
+
+    $component = Livewire::test(HCaptchaFormComponent::class);
+
+    $component->assertSeeHtml('id="hcaptcha-'.$component->instance()->getId().'-data-h-captcha-response"');
+});
+
+it('names the state path on the response input so a reset finds it', function (): void {
+    fakeHCaptcha(success: true);
+
+    Livewire::test(HCaptchaFormComponent::class)
+        ->assertSeeHtml('data-hcaptcha-field="data.h-captcha-response"');
+});

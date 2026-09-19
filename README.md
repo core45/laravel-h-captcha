@@ -216,7 +216,37 @@ Attributes the component (`Core45\HCaptcha\View\Components\HCaptcha`) accepts:
 | `model` | `?string` | Livewire property to bind the token into, e.g. `captchaToken` |
 | `options` | `array<string, scalar\|null>` | Extra `data-*` widget options passed through verbatim |
 
-Every widget always renders in hCaptcha's *explicit* mode — there is no auto mode to opt into. `api.js` is loaded with `render=explicit&onload=core45HCaptchaOnLoad`, and the bootstrap script (`resources/views/script.blade.php`) renders each `[data-hcaptcha-explicit]` container via `window.core45HCaptcha.render()`/`renderAll()` once the API is ready. This is what lets a widget inserted after the initial page load — by Livewire, Alpine, or a modal — still render.
+### Custom callbacks
+
+```blade
+<x-hcaptcha :options="['callback' => 'app.onCaptcha', 'error-callback' => 'app.onCaptchaError']" />
+```
+
+`callback`, `expired-callback`, `chalexpired-callback`, `error-callback`, `open-callback` and `close-callback` name a global function (dotted paths resolve from `window`). The package publishes the token to the hidden input first, then calls yours.
+
+### Invisible mode
+
+```blade
+<form method="post" action="/contact">
+    <x-hcaptcha size="invisible" />
+    <button type="submit">Send</button>
+</form>
+```
+
+With `size="invisible"` nothing is shown until the form is submitted. The bootstrap intercepts the form's `submit`, runs `hcaptcha.execute()`, writes the token, and submits again — plain forms and `wire:submit` alike. A second submit while a challenge is pending is ignored. If the challenge fails or is closed, the status element shows `widget_error` and the visitor can submit again. To run it yourself: `window.core45HCaptcha.execute(id)` returns a Promise resolving to the token.
+
+### Content Security Policy
+
+```php
+// AppServiceProvider::boot()
+\Core45\HCaptcha\HCaptchaManager::nonceUsing(fn () => \Illuminate\Support\Facades\Vite::cspNonce());
+```
+
+Both script tags carry `nonce="…"` when a nonce resolves: from `HCaptchaManager::nonceUsing()`, else from `Vite::cspNonce()` when your app calls `Vite::useCspNonce()`. `HCaptchaManager::cspDirectives()` returns the origins hCaptcha requires for `script-src`, `frame-src`, `style-src` and `connect-src` (`https://hcaptcha.com https://*.hcaptcha.com` — never a specific asset subdomain).
+
+Every widget always renders in hCaptcha's *explicit* mode. `api.js` is loaded with `render=explicit&onload=core45HCaptchaOnLoad`, and the bootstrap script (`resources/js/bootstrap.js`, emitted through `HCaptcha::bootstrapScript()`) renders each `[data-hcaptcha-explicit]` container as soon as it exists. Widgets are discovered with a `MutationObserver`, so a widget inserted after page load — by Livewire, Alpine, a modal, or plain JavaScript — renders on its own, and a widget removed from the page is dropped from the registry. Both script tags carry `data-navigate-once`, so `wire:navigate` never reloads the SDK.
+
+Widget ids are deterministic: `hcaptcha-page-1`, `hcaptcha-page-2`, … on a plain page and `hcaptcha-<livewire-id>-1` inside a Livewire component, so a re-render binds to the same hidden input. Pass `id="…"` to choose your own. The hidden input is `<id>-response` and a `<p id="<id>-status" role="status">` live region shows the widget's pending/error text (`hcaptcha::hcaptcha.widget_pending`, `widget_error`).
 
 hCaptcha's own auto mode (scanning `.h-captcha` elements on `DOMContentLoaded`) is not supported and cannot be enabled. It injects its own response field outside this package's control, loses the token on any DOM patch, and bypasses the hidden input the package tracks — which produced `missing-input-response` even when the visitor had completed the challenge.
 
@@ -292,19 +322,12 @@ public function submit()
     $this->validate(['captchaToken' => [new \Core45\HCaptcha\Rules\HCaptcha]]);
 
     // ...
-
-    $this->captchaToken = '';
-    $this->dispatch('core45HCaptcha:reset');
 }
 ```
 
-The widget wraps itself in `wire:ignore` so a Livewire re-render never replaces the iframe hCaptcha owns mid-interaction — Livewire's morph would otherwise kill the challenge. The bootstrap script re-renders widgets itself, hooking `livewire:init` (`morphed`, `morph.added`) and `livewire:navigated`.
+The widget wraps itself in `wire:ignore` so a Livewire re-render never replaces the iframe hCaptcha owns; the bootstrap re-renders widgets itself. Tokens are single-use, so after every verification — accepted or rejected, even when another field failed — the rule dispatches `core45HCaptcha:reset` with the validated field name and the bootstrap resets exactly that widget inside your component. You no longer call `$this->dispatch('core45HCaptcha:reset')` yourself; if you do, an event without `field` resets every widget, and `{ id }` resets one.
 
-hCaptcha tokens are single-use, so **the widget must be reset after every submit, successful or not** — a spent token left in the form fails the next attempt with `token-already-used`. Reset via the JS entry points `script.blade.php` actually exposes on the global object:
-
-- `window.core45HCaptcha` — the namespace, with `render(el)`, `renderAll()`, `reset(id?)`, `markReady()`, `widgets`, `container(id)`
-- `window.core45HCaptcha.reset(id)` resets one widget by id; called with no argument it resets every widget on the page
-- The `core45HCaptcha:reset` window event, dispatched with `{ detail: { id } }` (or no `id` to reset all), is the same reset path — dispatch it from Livewire with `$this->dispatch('core45HCaptcha:reset')` and listen for it in JS if you prefer an event-driven trigger over calling the function directly
+JavaScript entry points on `window.core45HCaptcha`: `render(el)`, `renderAll()`, `reset(id?)`, `execute(id)`, `markReady()`, `widgets`, `container(id)`.
 
 ## Filament
 
@@ -319,6 +342,8 @@ HCaptcha::make() // field name defaults to config('hcaptcha.field')
 > Note: the Filament field ships in the same release as the rest of this package.
 
 The field calls `->markAsRequired()` (an asterisk only — a UI cue) and carries the `HCaptcha` rule object out of the box; it does not call `->required()`, since the rule is already implicit and a `required()` rule would only compete with it for which message wins. It also calls `->dehydrated(false)` deliberately — the token is single-use and must never be persisted onto the model — but validation still runs against the raw form state before dehydration strips the value, so the captcha is still enforced on save.
+
+When no usable sitekey resolves the field renders no widget (a debug-only notice, like the Blade component) but stays in validation, so the form still fails closed. Widget ids are scoped to the Livewire component, so two forms with the same state path on one page do not collide.
 
 ## Verifying by hand
 
@@ -355,7 +380,7 @@ Error codes follow [hCaptcha's siteverify table](https://docs.hcaptcha.com/#site
 
 ## Upgrading from 1.x
 
-2.0.0 changes behaviour in six places. Each is a correctness fix; none needs a code change for the common case of one form guarded by the rule and/or the middleware.
+2.0.0 changes behaviour in six places. Each is a correctness fix; the common case of one form guarded by the rule and/or the middleware needs no code change, but a Livewire component should delete its manual `core45HCaptcha:reset` dispatch and a Livewire route should drop the middleware.
 
 - **`VerificationResult::success` is now hCaptcha's verdict only.** Read `accepted` (or call `passed()`) for the final answer. In 1.x a local rejection overwrote `success` with `false`; now it leaves `success` as `true` and sets `accepted: false`. Anything that branched on `->success` should branch on `->passed()`.
 - **The audit table has a new `accepted` column.** Run `php artisan migrate`. If you published the migrations, publish again with `php artisan vendor:publish --tag=hcaptcha-migrations`. The `failed()` model scope now filters on `accepted`.
@@ -365,6 +390,10 @@ Error codes follow [hCaptcha's siteverify table](https://docs.hcaptcha.com/#site
 - **An install that relied on 1.x rejecting an unreported hostname should set `HCAPTCHA_HOSTNAMES_STRICT=true`.** A missing or `not-provided` hostname now passes with a warning by default; the authoritative origin control is the domain allowlist on the sitekey in the hCaptcha dashboard, not this check.
 
 Two defaults changed without changing behaviour: `retries` now counts *additional* attempts and defaults to `0` (1.x's default of `1` also made one attempt), and the "hostname check inactive" error is logged once per process rather than once per verification. New opt-ins: `hostnames_strict` and `logging.log_oversized_token`, both `false`.
+
+- **Published views:** if you published `hcaptcha::script` or `hcaptcha::widget` in 1.x, re-publish them. The bootstrap now lives in `resources/js/bootstrap.js` and the widget view emits a status element and `data-hcaptcha-field`.
+- **Widget ids are deterministic** (`hcaptcha-page-N`, `hcaptcha-<livewire-id>-N`) instead of random; selectors that relied on the `hcaptcha-` prefix still match.
+- **`data-hcaptcha-model` is no longer emitted.**
 
 ## Audit trail
 
@@ -484,6 +513,8 @@ $this->post('/contact', ['h-captcha-response' => 'any-token'])
 
 Http::assertSentCount(1); // the memoization guarantee: one token per field, one HTTP call
 ```
+
+Browser tests in a consuming app can point `hcaptcha.script.url` at the package's stub, `resources/js/fake-api.js` (served by a route of your own), which implements `render`, `execute`, `reset` and `getResponse` without the network and exposes `window.__fakeHCaptcha`. Phase 4's `HCaptcha::fake()` wires this up for you.
 
 ## Versioning & License
 

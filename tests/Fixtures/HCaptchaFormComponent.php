@@ -23,6 +23,8 @@ class HCaptchaFormComponent extends Component implements HasForms
      */
     public array $data = [];
 
+    public int $saved = 0;
+
     public function mount(): void
     {
         $this->form->fill();
@@ -37,13 +39,26 @@ class HCaptchaFormComponent extends Component implements HasForms
             ->statePath('data');
     }
 
+    /**
+     * @return array<string, mixed>
+     */
     public function save(): array
     {
-        return $this->form->getState();
+        $state = $this->form->getState();
+
+        $this->saved++;
+
+        return $state;
     }
 
     public function render(): string
     {
-        return '<div>{{ $this->form }}</div>';
+        return <<<'BLADE'
+            <div>
+                {{ $this->form }}
+                <button type="button" id="save-{{ $this->getId() }}" wire:click="save">Save</button>
+                <p id="saved-{{ $this->getId() }}">Saved {{ $saved }} times</p>
+            </div>
+            BLADE;
     }
 }

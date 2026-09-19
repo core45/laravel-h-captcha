@@ -17,6 +17,10 @@ All notable changes to `core45/laravel-h-captcha` are documented in this file, i
 - The "hostname check is inactive" error is logged once per process.
 - `HCaptchaManager::configured()` accepts an override; the Blade component renders with an explicit `sitekey` when no global key is set and degrades instead of throwing when the override is a placeholder.
 - An empty `sitekey` in a `VerificationContext` or `Rules\HCaptcha` falls back to the configured key instead of suppressing `send_sitekey`.
+- The bootstrap script moved to `resources/js/bootstrap.js` and discovers widgets with a `MutationObserver` instead of Livewire's morph hooks; it prunes widgets removed from the page and marks both script tags `data-navigate-once`.
+- Widget ids are deterministic per Livewire component instance or page, fixing the token binding lost after a Livewire re-render and the Filament id collision between two forms with the same state path.
+- `Rules\HCaptcha` dispatches `core45HCaptcha:reset` with the validated field after any token is verified inside a Livewire component; manual reset calls are no longer needed.
+- The Filament field renders no widget when no sitekey resolves but stays in validation.
 
 ### Added
 
@@ -25,6 +29,17 @@ All notable changes to `core45/laravel-h-captcha` are documented in this file, i
 - Migration `2026_09_19_000000_add_accepted_to_hcaptcha_verifications_table`, adding an indexed `accepted` column backfilled from `success`. `HCaptchaVerification::failed()` now filters on it; new `rejectedLocally()` scope.
 - The Filament field passes its `sitekey()` override to the validation rule, so verification is sent the key the widget was rendered with.
 - `hcaptcha` middleware accepts an optional second parameter, the sitekey the widget was rendered with (`hcaptcha:h-captcha-response,<sitekey>`), so it shares a verdict with a rule constructed with the same `sitekey:`.
+- Invisible mode: `size="invisible"` widgets execute the challenge on form submit, with duplicate-submit protection and an accessible status element.
+- Custom `data-*-callback` options are invoked after the package's own handling.
+- `HCaptchaManager::nonceUsing()`, `nonce()`, `nonceAttribute()`, `cspDirectives()` and `CSP_SOURCES`; the script tags carry a nonce from the resolver or `Vite::cspNonce()`.
+- `HCaptchaManager::bootstrapScript()`, `RESET_EVENT`; `widgetId()` accepts a `key`.
+- Translation keys `widget_error` and `widget_pending` in all locales.
+- `resources/js/fake-api.js`, a network-free stand-in for `api.js` used by the package's Playwright suite.
+- Response inputs carry `data-hcaptcha-field`.
+
+### Removed
+
+- `data-hcaptcha-model` attribute (never read).
 
 ### Fixed
 
@@ -32,6 +47,10 @@ All notable changes to `core45/laravel-h-captcha` are documented in this file, i
 - `sitekey-secret-mismatch` is now logged as a configuration error instead of failing visitors silently.
 - The middleware reads a configured field name containing a dot as a literal key rather than a nested path.
 - A non-2xx siteverify response whose body still carries a verdict (for example `400` with `bad-request`) is now applied as that verdict and fails closed, instead of being treated as an outage that `fail_open` could accept.
+
+### Tests
+
+- Browser suite (`tests/Browser`, Pest + Playwright) covering Livewire re-render, two components, modal reopen, `wire:navigate`, custom callbacks, automatic reset after an unrelated validation failure, invisible submit in plain and Livewire forms, strict CSP with a negative control, and two Filament fields on one page.
 
 ## 1.0.0 - 2026-09-17
 
