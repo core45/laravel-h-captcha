@@ -13,6 +13,7 @@ use Illuminate\Support\Carbon;
  *
  * @property int $id
  * @property bool $success
+ * @property bool $accepted
  * @property string|null $token_hash
  * @property string|null $hostname
  * @property Carbon|null $challenge_ts
@@ -32,6 +33,7 @@ class HCaptchaVerification extends Model
      */
     protected $fillable = [
         'success',
+        'accepted',
         'token_hash',
         'hostname',
         'challenge_ts',
@@ -56,14 +58,26 @@ class HCaptchaVerification extends Model
     }
 
     /**
-     * Attempts hCaptcha itself rejected, or a local assertion rejected.
+     * Attempts the package did not accept: hCaptcha rejected them, a local
+     * assertion rejected them, or an outage was not failed open.
      *
      * @param  Builder<$this>  $query
      * @return Builder<$this>
      */
     public function scopeFailed(Builder $query): Builder
     {
-        return $query->where('success', false);
+        return $query->where('accepted', false);
+    }
+
+    /**
+     * Attempts hCaptcha accepted and a local assertion then rejected.
+     *
+     * @param  Builder<$this>  $query
+     * @return Builder<$this>
+     */
+    public function scopeRejectedLocally(Builder $query): Builder
+    {
+        return $query->whereNotNull('rejected_by');
     }
 
     /**
@@ -84,6 +98,7 @@ class HCaptchaVerification extends Model
     {
         return [
             'success' => 'boolean',
+            'accepted' => 'boolean',
             'challenge_ts' => 'datetime',
             'score' => 'float',
             'error_codes' => 'array',

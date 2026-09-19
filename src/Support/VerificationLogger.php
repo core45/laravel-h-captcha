@@ -50,6 +50,7 @@ final readonly class VerificationLogger
     {
         return [
             'success' => $result->success,
+            'accepted' => $result->accepted,
             'token_hash' => $tokenHash,
             'hostname' => $result->hostname,
             'challenge_ts' => $result->challengeTs,

@@ -212,3 +212,36 @@ it('never fails a verification because the audit row could not be written', func
 
     expect(app(Verifier::class)->verify(TestCase::TEST_TOKEN)->passed())->toBeTrue();
 });
+
+it('records the provider verdict and the final acceptance separately', function (): void {
+    config()->set('hcaptcha.hostnames', ['allowed.test']);
+    fakeAccepted(['hostname' => 'attacker.test']);
+
+    app(Verifier::class)->verify(TestCase::TEST_TOKEN);
+
+    $row = HCaptchaVerification::query()->sole();
+
+    expect($row->success)->toBeTrue()
+        ->and($row->accepted)->toBeFalse()
+        ->and($row->rejected_by)->toBe('hostname-mismatch');
+
+    expect(HCaptchaVerification::query()->failed()->count())->toBe(1)
+        ->and(HCaptchaVerification::query()->rejectedLocally()->count())->toBe(1);
+});
+
+it('records an accepted outage under fail-open as accepted but not successful', function (): void {
+    config()->set('hcaptcha.fail_open', true);
+    Http::fake([
+        'api.hcaptcha.com/*' => Http::response('', 503),
+    ]);
+
+    app(Verifier::class)->verify(TestCase::TEST_TOKEN);
+
+    $row = HCaptchaVerification::query()->sole();
+
+    expect($row->success)->toBeFalse()
+        ->and($row->accepted)->toBeTrue()
+        ->and($row->error_codes)->toBe(['service-unavailable']);
+
+    expect(HCaptchaVerification::query()->failed()->count())->toBe(0);
+});
