@@ -6,6 +6,7 @@ namespace Core45\HCaptcha;
 
 use Core45\HCaptcha\Contracts\Verifier;
 use Core45\HCaptcha\Exceptions\MissingSitekeyException;
+use Core45\HCaptcha\Support\VerificationContext;
 use Core45\HCaptcha\Support\VerificationResult;
 use Illuminate\Contracts\Config\Repository;
 use Illuminate\Contracts\Foundation\Application;
@@ -62,13 +63,13 @@ class HCaptchaManager
     /**
      * Verify a token. Idempotent per request -- see the Verifier contract.
      */
-    public function verify(?string $token, ?string $clientIp = null, ?string $scope = null): VerificationResult
+    public function verify(?string $token, ?string $clientIp = null, string|VerificationContext|null $scope = null): VerificationResult
     {
         // Defaults to the configured field name rather than to no scope. An
         // empty scope is a shared memo bucket, so leaving it unset here would
         // let manual verification reuse a pass across unrelated actions --
         // exactly the hole the scope exists to close.
-        return $this->verifier->verify($token, $clientIp, $scope ?? $this->fieldName());
+        return $this->verifier->verify($token, $clientIp, $scope ?? VerificationContext::forField($this->fieldName()));
     }
 
     public function sitekey(?string $override = null): string

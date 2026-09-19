@@ -3,10 +3,13 @@
 declare(strict_types=1);
 
 use Core45\HCaptcha\Rules\HCaptcha;
+use Core45\HCaptcha\Tests\Fixtures\CaptchaGuardedComponent;
 use Core45\HCaptcha\Tests\TestCase;
+use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Validator;
+use Livewire\Livewire;
 
 beforeEach(function (): void {
     app()->setLocale('en');
@@ -175,4 +178,60 @@ it('spends the token once when the middleware and the rule both run', function (
         ->assertOk();
 
     Http::assertSentCount(1);
+});
+
+/*
+ * Livewire handles up to 200 components in one HTTP request, and the verifier
+ * is request-scoped, so two components validating the same property name
+ * share one memo. Without the action in the scope, the second component rode
+ * on the first one's solved captcha. With it, the second pays a real request
+ * and hCaptcha rejects the spent token.
+ */
+it('does not let a second Livewire component reuse a verdict for the same property name', function (): void {
+    Http::fake([
+        'api.hcaptcha.com/*' => Http::sequence()
+            ->push(['success' => true, 'hostname' => 'localhost'])
+            ->push(['success' => false, 'error-codes' => ['already-seen-response']]),
+    ]);
+
+    Livewire::test(CaptchaGuardedComponent::class)
+        ->set('captcha', TestCase::TEST_TOKEN)
+        ->call('submit')
+        ->assertHasNoErrors()
+        ->assertSet('submitted', true);
+
+    Livewire::test(CaptchaGuardedComponent::class)
+        ->set('captcha', TestCase::TEST_TOKEN)
+        ->call('submit')
+        ->assertHasErrors(['captcha'])
+        ->assertSet('submitted', false);
+
+    Http::assertSentCount(2);
+});
+
+it('still spends the token once when one Livewire component validates the same field twice', function (): void {
+    Http::fake([
+        'api.hcaptcha.com/*' => Http::response(['success' => true, 'hostname' => 'localhost']),
+    ]);
+
+    Livewire::test(CaptchaGuardedComponent::class)
+        ->set('captcha', TestCase::TEST_TOKEN)
+        ->call('submitTwice')
+        ->assertHasNoErrors()
+        ->assertSet('submitted', true);
+
+    Http::assertSentCount(1);
+});
+
+it('sends an explicit expected sitekey from the rule object', function (): void {
+    Http::fake([
+        'api.hcaptcha.com/*' => Http::response(['success' => true, 'hostname' => 'localhost']),
+    ]);
+
+    validator(
+        ['h-captcha-response' => TestCase::TEST_TOKEN],
+        ['h-captcha-response' => [new HCaptcha(sitekey: '20000000-ffff-ffff-ffff-000000000002')]],
+    )->validate();
+
+    Http::assertSent(fn (Request $request): bool => $request['sitekey'] === '20000000-ffff-ffff-ffff-000000000002');
 });

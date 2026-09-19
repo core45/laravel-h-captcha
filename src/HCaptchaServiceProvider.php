@@ -8,6 +8,7 @@ use Core45\HCaptcha\Compat\CaptchaCompat;
 use Core45\HCaptcha\Console\PruneVerificationsCommand;
 use Core45\HCaptcha\Contracts\Verifier;
 use Core45\HCaptcha\Http\Middleware\VerifyHCaptcha;
+use Core45\HCaptcha\Rules\HCaptcha as HCaptchaRule;
 use Core45\HCaptcha\Support\HttpVerifier;
 use Core45\HCaptcha\Support\VerificationLogger;
 use Core45\HCaptcha\View\Components\HCaptcha as HCaptchaComponent;
@@ -174,14 +175,11 @@ class HCaptchaServiceProvider extends ServiceProvider
             // the string rule consistent with Rules\HCaptcha, which sets
             // $implicit = true, so neither form needs pairing with `required`.
             Validator::extendImplicit($rule, function (string $attribute, mixed $value): bool {
-                $result = $this->app->make(Verifier::class)->verify(
-                    is_string($value) ? $value : null,
-                    $this->app->bound('request') ? $this->app->make('request')->ip() : null,
-                    // Same scope the rule object and the middleware use, so
-                    // stacking any two of them on one field still costs one
-                    // HTTP call instead of double-spending the token.
-                    $attribute,
-                );
+                // Same context the rule object builds, so stacking any two of
+                // them on one field still costs one HTTP call instead of
+                // double-spending the token. The rule object derives the
+                // Livewire action too; the string rule delegates to it.
+                $result = (new HCaptchaRule)->resultFor($attribute, $value);
 
                 $this->stringRuleMessages[$attribute] = $result->messageKey();
 

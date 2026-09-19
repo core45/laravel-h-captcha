@@ -113,3 +113,17 @@ it('reports an outage as a validation error rather than a 500', function (): voi
             trans('hcaptcha::hcaptcha.unavailable'),
         );
 });
+
+it('reads a field whose name contains a dot as a literal key', function (): void {
+    Http::fake([
+        'api.hcaptcha.com/*' => Http::response(['success' => true, 'hostname' => 'localhost']),
+    ]);
+
+    Route::post('/dotted', fn () => response()->json(['ok' => true]))
+        ->middleware('hcaptcha:my.captcha');
+
+    $this->postJson('/dotted', ['my.captcha' => TestCase::TEST_TOKEN])
+        ->assertOk();
+
+    Http::assertSentCount(1);
+});

@@ -6,6 +6,7 @@ namespace Core45\HCaptcha\Http\Middleware;
 
 use Closure;
 use Core45\HCaptcha\Contracts\Verifier;
+use Core45\HCaptcha\Support\VerificationContext;
 use Illuminate\Contracts\Config\Repository;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
@@ -22,7 +23,7 @@ use Symfony\Component\HttpFoundation\Response;
  * regular form post.
  *
  * Safe to stack with the validation rule on the same field: the verifier
- * memoizes per `(token, field)`, so the single-use token is spent once.
+ * memoizes per `(token, field, action)`, so the single-use token is spent once.
  *
  * Put this on the state-changing route only, never on a route group that also
  * serves the GET which renders the form -- it verifies every request it sees,
@@ -49,9 +50,16 @@ class VerifyHCaptcha
     {
         $field ??= $this->fieldName();
 
-        $token = $request->input($field);
+        // input() applies dot notation, so a configured field name containing
+        // a dot would be read as a nested path. Prefer the literal key.
+        $all = $request->all();
+        $token = array_key_exists($field, $all) ? $all[$field] : $request->input($field);
 
-        $result = $this->verifier->verify(is_string($token) ? $token : null, $request->ip(), $field);
+        $result = $this->verifier->verify(
+            is_string($token) ? $token : null,
+            $request->ip(),
+            VerificationContext::forField($field),
+        );
 
         if ($result->failed()) {
             throw ValidationException::withMessages([
