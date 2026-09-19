@@ -1,0 +1,11 @@
+{
+    "name": "laravel-h-captcha-dev",
+    "private": true,
+    "description": "Development dependencies for the browser test suite of core45/laravel-h-captcha.",
+    "scripts": {
+        "browsers": "playwright install chromium"
+    },
+    "devDependencies": {
+        "playwright": "^1.63.0"
+    }
+}

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Core45\HCaptcha\Tests;
 
 use Core45\HCaptcha\HCaptchaServiceProvider;
+use Core45\HCaptcha\Tests\Fixtures\HCaptchaFormComponent;
 use Filament\Actions\ActionsServiceProvider;
 use Filament\FilamentServiceProvider;
 use Filament\Forms\FormsServiceProvider;
@@ -16,6 +17,9 @@ use Filament\Support\SupportServiceProvider;
 use Filament\Tables\TablesServiceProvider;
 use Filament\Widgets\WidgetsServiceProvider;
 use Illuminate\Database\Eloquent\Factories\Factory;
+use Illuminate\Support\Facades\Blade;
+use Illuminate\Support\Facades\View;
+use Livewire\Livewire;
 use Livewire\LivewireServiceProvider;
 use Livewire\Mechanisms\DataStore;
 use Orchestra\Testbench\TestCase as Orchestra;
@@ -50,6 +54,14 @@ class TestCase extends Orchestra
         // re-registers it as the singleton Livewire itself expects. Safe to
         // remove once upstream fixes filament/support's binding.
         $this->app->singleton(DataStore::class, DataStoreOverride::class);
+
+        // Fixture views and anonymous components shared by Feature and
+        // Browser tests: <x-hcaptcha-tests::layouts.app>, hcaptcha-tests::modal, ...
+        View::addNamespace('hcaptcha-tests', __DIR__.'/views');
+        Blade::anonymousComponentPath(__DIR__.'/views', 'hcaptcha-tests');
+
+        // Fixture components referenced by tag name inside fixture views.
+        Livewire::component('hcaptcha-form-component', HCaptchaFormComponent::class);
     }
 
     protected function getPackageProviders($app): array

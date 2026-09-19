@@ -24,7 +24,7 @@ function siteverifyBody(array $overrides = []): array
     ], $overrides);
 }
 
-function fakeSiteverify(array $body = [], int $status = 200): void
+function fakeVerifierSiteverify(array $body = [], int $status = 200): void
 {
     Http::fake([
         'api.hcaptcha.com/*' => Http::response(siteverifyBody($body), $status),
@@ -37,7 +37,7 @@ function verifier(): Verifier
 }
 
 it('accepts a token hCaptcha approves', function (): void {
-    fakeSiteverify();
+    fakeVerifierSiteverify();
 
     $result = verifier()->verify(TestCase::TEST_TOKEN, '203.0.113.1');
 
@@ -48,7 +48,7 @@ it('accepts a token hCaptcha approves', function (): void {
 });
 
 it('sends the secret, token, client ip and sitekey', function (): void {
-    fakeSiteverify();
+    fakeVerifierSiteverify();
 
     verifier()->verify(TestCase::TEST_TOKEN, '203.0.113.1');
 
@@ -64,7 +64,7 @@ it('sends the secret, token, client ip and sitekey', function (): void {
 
 it('omits the sitekey when send_sitekey is off', function (): void {
     config()->set('hcaptcha.send_sitekey', false);
-    fakeSiteverify();
+    fakeVerifierSiteverify();
 
     verifier()->verify(TestCase::TEST_TOKEN);
 
@@ -72,7 +72,7 @@ it('omits the sitekey when send_sitekey is off', function (): void {
 });
 
 it('rejects a token hCaptcha refuses and surfaces the error codes', function (): void {
-    fakeSiteverify(['success' => false, 'error-codes' => ['already-seen-response']]);
+    fakeVerifierSiteverify(['success' => false, 'error-codes' => ['already-seen-response']]);
 
     $result = verifier()->verify('nope');
 
@@ -90,7 +90,7 @@ it('rejects a token hCaptcha refuses and surfaces the error codes', function ():
  * cannot act on.
  */
 it('issues one HTTP request when the same token is verified twice for one scope', function (): void {
-    fakeSiteverify();
+    fakeVerifierSiteverify();
 
     $first = verifier()->verify(TestCase::TEST_TOKEN, null, 'h-captcha-response');
     $second = verifier()->verify(TestCase::TEST_TOKEN, null, 'h-captcha-response');
@@ -109,7 +109,7 @@ it('issues one HTTP request when the same token is verified twice for one scope'
  * fail-safe for anything that does not.
  */
 it('does not memoize a verdict obtained without a scope', function (): void {
-    fakeSiteverify();
+    fakeVerifierSiteverify();
 
     verifier()->verify(TestCase::TEST_TOKEN);
     verifier()->verify(TestCase::TEST_TOKEN);
@@ -125,7 +125,7 @@ it('does not memoize a verdict obtained without a scope', function (): void {
  * field it was solved for.
  */
 it('does not let one solved token authorise a second, different field', function (): void {
-    fakeSiteverify();
+    fakeVerifierSiteverify();
 
     verifier()->verify(TestCase::TEST_TOKEN, null, 'contact_form');
     verifier()->verify(TestCase::TEST_TOKEN, null, 'newsletter_form');
@@ -134,7 +134,7 @@ it('does not let one solved token authorise a second, different field', function
 });
 
 it('still collapses two checks of the same field into one call', function (): void {
-    fakeSiteverify();
+    fakeVerifierSiteverify();
 
     verifier()->verify(TestCase::TEST_TOKEN, null, 'h-captcha-response');
     verifier()->verify(TestCase::TEST_TOKEN, null, 'h-captcha-response');
@@ -144,7 +144,7 @@ it('still collapses two checks of the same field into one call', function (): vo
 
 it('rejects an oversized token without proxying it to hCaptcha', function (): void {
     config()->set('hcaptcha.max_token_length', 64);
-    fakeSiteverify();
+    fakeVerifierSiteverify();
 
     $result = verifier()->verify(str_repeat('a', 65));
 
@@ -156,7 +156,7 @@ it('rejects an oversized token without proxying it to hCaptcha', function (): vo
 });
 
 it('treats a non-boolean success value as a rejection', function (mixed $success): void {
-    fakeSiteverify(['success' => $success]);
+    fakeVerifierSiteverify(['success' => $success]);
 
     expect(verifier()->verify(TestCase::TEST_TOKEN)->passed())->toBeFalse();
 })->with([
@@ -168,7 +168,7 @@ it('treats a non-boolean success value as a rejection', function (mixed $success
 ]);
 
 it('issues a separate request for a different token', function (): void {
-    fakeSiteverify();
+    fakeVerifierSiteverify();
 
     verifier()->verify('token-one');
     verifier()->verify('token-two');
@@ -177,7 +177,7 @@ it('issues a separate request for a different token', function (): void {
 });
 
 it('forgets memoized verdicts when flushed', function (): void {
-    fakeSiteverify();
+    fakeVerifierSiteverify();
 
     verifier()->verify(TestCase::TEST_TOKEN);
     verifier()->flush();
@@ -187,7 +187,7 @@ it('forgets memoized verdicts when flushed', function (): void {
 });
 
 it('never calls the service when no token was submitted', function (): void {
-    fakeSiteverify();
+    fakeVerifierSiteverify();
 
     $result = verifier()->verify(null);
 
@@ -199,7 +199,7 @@ it('never calls the service when no token was submitted', function (): void {
 });
 
 it('treats a whitespace-only token as missing', function (): void {
-    fakeSiteverify();
+    fakeVerifierSiteverify();
 
     expect(verifier()->verify('   ')->tokenMissing())->toBeTrue();
 
@@ -320,7 +320,7 @@ it('still treats a non-2xx response without a verdict body as an outage', functi
  */
 it('accepts a token whose hostname hCaptcha did not provide, and says so', function (string $hostname): void {
     config()->set('hcaptcha.hostnames', ['example.test']);
-    fakeSiteverify(['hostname' => $hostname]);
+    fakeVerifierSiteverify(['hostname' => $hostname]);
 
     Log::shouldReceive('warning')
         ->once()
@@ -340,7 +340,7 @@ it('accepts a token whose hostname hCaptcha did not provide, and says so', funct
 it('rejects an unreported hostname when the policy is strict', function (): void {
     config()->set('hcaptcha.hostnames', ['example.test']);
     config()->set('hcaptcha.hostnames_strict', true);
-    fakeSiteverify(['hostname' => 'not-provided']);
+    fakeVerifierSiteverify(['hostname' => 'not-provided']);
 
     $result = verifier()->verify(TestCase::TEST_TOKEN);
 
@@ -350,7 +350,7 @@ it('rejects an unreported hostname when the policy is strict', function (): void
 });
 
 it('sends the sitekey carried by the context instead of the configured one', function (): void {
-    fakeSiteverify();
+    fakeVerifierSiteverify();
 
     verifier()->verify(TestCase::TEST_TOKEN, null, new VerificationContext(
         field: 'h-captcha-response',
@@ -361,7 +361,7 @@ it('sends the sitekey carried by the context instead of the configured one', fun
 });
 
 it('falls back to the configured sitekey when the context carries an empty one', function (): void {
-    fakeSiteverify();
+    fakeVerifierSiteverify();
 
     verifier()->verify(TestCase::TEST_TOKEN, null, new VerificationContext(field: 'f', sitekey: ''));
 
@@ -369,7 +369,7 @@ it('falls back to the configured sitekey when the context carries an empty one',
 });
 
 it('keeps verdicts apart when the same field is verified for two different actions', function (): void {
-    fakeSiteverify();
+    fakeVerifierSiteverify();
 
     verifier()->verify(TestCase::TEST_TOKEN, null, new VerificationContext(field: 'data.captcha', action: 'App\\Livewire\\Contact#a'));
     verifier()->verify(TestCase::TEST_TOKEN, null, new VerificationContext(field: 'data.captcha', action: 'App\\Livewire\\Newsletter#b'));
@@ -378,7 +378,7 @@ it('keeps verdicts apart when the same field is verified for two different actio
 });
 
 it('does not let a different expected sitekey share a memoized verdict', function (): void {
-    fakeSiteverify();
+    fakeVerifierSiteverify();
 
     verifier()->verify(TestCase::TEST_TOKEN, null, new VerificationContext(field: 'f', sitekey: 'key-a'));
     verifier()->verify(TestCase::TEST_TOKEN, null, new VerificationContext(field: 'f', sitekey: 'key-b'));
@@ -409,7 +409,7 @@ it('retries as many additional times as configured', function (): void {
 
 it('rejects a genuine token reported against an unexpected hostname', function (): void {
     config()->set('hcaptcha.hostnames', ['allowed.test']);
-    fakeSiteverify(['hostname' => 'attacker.test']);
+    fakeVerifierSiteverify(['hostname' => 'attacker.test']);
 
     $result = verifier()->verify(TestCase::TEST_TOKEN);
 
@@ -419,7 +419,7 @@ it('rejects a genuine token reported against an unexpected hostname', function (
 
 it('accepts a configured hostname regardless of case', function (): void {
     config()->set('hcaptcha.hostnames', 'Allowed.Test');
-    fakeSiteverify(['hostname' => 'allowed.test']);
+    fakeVerifierSiteverify(['hostname' => 'allowed.test']);
 
     expect(verifier()->verify(TestCase::TEST_TOKEN)->passed())->toBeTrue();
 });
@@ -427,7 +427,7 @@ it('accepts a configured hostname regardless of case', function (): void {
 it('rejects a token whose risk score is above max_score', function (): void {
     // hCaptcha scores risk: higher is more bot-like, the inverse of reCAPTCHA.
     config()->set('hcaptcha.max_score', 0.5);
-    fakeSiteverify(['score' => 0.9, 'score_reason' => ['bot']]);
+    fakeVerifierSiteverify(['score' => 0.9, 'score_reason' => ['bot']]);
 
     $result = verifier()->verify(TestCase::TEST_TOKEN);
 
@@ -438,14 +438,14 @@ it('rejects a token whose risk score is above max_score', function (): void {
 
 it('accepts a token whose risk score is within max_score', function (): void {
     config()->set('hcaptcha.max_score', 0.5);
-    fakeSiteverify(['score' => 0.1]);
+    fakeVerifierSiteverify(['score' => 0.1]);
 
     expect(verifier()->verify(TestCase::TEST_TOKEN)->passed())->toBeTrue();
 });
 
 it('ignores max_score when the account returns no score', function (): void {
     config()->set('hcaptcha.max_score', 0.5);
-    fakeSiteverify();
+    fakeVerifierSiteverify();
 
     expect(verifier()->verify(TestCase::TEST_TOKEN)->passed())->toBeTrue();
 });
@@ -467,7 +467,7 @@ it('ignores max_score when the account returns no score', function (): void {
  */
 it('rejects a genuine token solved on another site using our own sitekey', function (): void {
     config()->set('hcaptcha.hostnames', 'example.test');
-    fakeSiteverify(['hostname' => 'attacker.example']);
+    fakeVerifierSiteverify(['hostname' => 'attacker.example']);
 
     $result = verifier()->verify(TestCase::TEST_TOKEN);
 
@@ -484,7 +484,7 @@ it('rejects a genuine token solved on another site using our own sitekey', funct
 it('logs an error once per process while the hostname check is disabled', function (): void {
     HttpVerifier::forgetLoggedWarnings();
     config()->set('hcaptcha.hostnames', ['', null]);
-    fakeSiteverify();
+    fakeVerifierSiteverify();
 
     Log::shouldReceive('error')
         ->once()
@@ -501,7 +501,7 @@ it('rejects a token minted against a different sitekey and logs it as a configur
     // An active hostname policy, so the once-per-process "hostname check is
     // inactive" error cannot fire here and confuse the expectation below.
     config()->set('hcaptcha.hostnames', ['example.test']);
-    fakeSiteverify(['success' => false, 'error-codes' => ['sitekey-secret-mismatch']]);
+    fakeVerifierSiteverify(['success' => false, 'error-codes' => ['sitekey-secret-mismatch']]);
 
     Log::shouldReceive('error')
         ->once()
@@ -519,7 +519,7 @@ it('rejects a token minted against a different sitekey and logs it as a configur
 });
 
 it('rejects every documented owner-side error code rather than passing the request', function (string $code): void {
-    fakeSiteverify(['success' => false, 'error-codes' => [$code]]);
+    fakeVerifierSiteverify(['success' => false, 'error-codes' => [$code]]);
 
     $result = verifier()->verify('some-token');
 
@@ -555,7 +555,7 @@ it('is registered per request, not as a process-wide singleton', function (): vo
 
 it('throws rather than silently rejecting everyone when no secret is set', function (): void {
     config()->set('hcaptcha.secret', null);
-    fakeSiteverify();
+    fakeVerifierSiteverify();
 
     verifier()->verify(TestCase::TEST_TOKEN);
 })->throws(MissingSecretException::class);
