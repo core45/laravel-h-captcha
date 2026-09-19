@@ -70,12 +70,13 @@ it('omits the sitekey when send_sitekey is off', function (): void {
 });
 
 it('rejects a token hCaptcha refuses and surfaces the error codes', function (): void {
-    fakeSiteverify(['success' => false, 'error-codes' => ['invalid-input-response']]);
+    fakeSiteverify(['success' => false, 'error-codes' => ['already-seen-response']]);
 
     $result = verifier()->verify('nope');
 
     expect($result->failed())->toBeTrue()
-        ->and($result->errorCodes)->toBe(['invalid-input-response'])
+        ->and($result->success)->toBeFalse()
+        ->and($result->errorCodes)->toBe(['already-seen-response'])
         ->and($result->tokenAlreadyUsed())->toBeTrue()
         ->and($result->messageKey())->toBe('hcaptcha::hcaptcha.expired');
 });
@@ -145,7 +146,9 @@ it('rejects an oversized token without proxying it to hCaptcha', function (): vo
 
     $result = verifier()->verify(str_repeat('a', 65));
 
-    expect($result->failed())->toBeTrue();
+    expect($result->failed())->toBeTrue()
+        ->and($result->errorCodes)->toBe(['token-too-long'])
+        ->and($result->messageKey())->toBe('hcaptcha::hcaptcha.failed');
 
     Http::assertNothingSent();
 });
@@ -314,14 +317,24 @@ it('logs an error on every verification while the hostname check is disabled', f
     verifier()->verify(TestCase::TEST_TOKEN);
 });
 
-it('rejects a token minted against a different sitekey', function (): void {
-    fakeSiteverify(['success' => false, 'error-codes' => ['sitekey-mismatch']]);
+it('rejects a token minted against a different sitekey and logs it as a configuration error', function (): void {
+    // An active hostname policy, so the once-per-process "hostname check is
+    // inactive" error cannot fire here and confuse the expectation below.
+    config()->set('hcaptcha.hostnames', ['example.test']);
+    fakeSiteverify(['success' => false, 'error-codes' => ['sitekey-secret-mismatch']]);
+
+    Log::shouldReceive('error')
+        ->once()
+        ->withArgs(fn (string $message): bool => str_contains($message, 'configuration problem'));
+    Log::shouldReceive('warning')->zeroOrMoreTimes();
+    Log::shouldReceive('info')->zeroOrMoreTimes();
 
     $result = verifier()->verify('token-from-another-site');
 
     expect($result->failed())->toBeTrue()
         ->and($result->passed())->toBeFalse()
-        ->and($result->hasErrorCode('sitekey-mismatch'))->toBeTrue()
+        ->and($result->hasErrorCode('sitekey-secret-mismatch'))->toBeTrue()
+        ->and($result->isConfigurationError())->toBeTrue()
         ->and($result->messageKey())->toBe('hcaptcha::hcaptcha.failed');
 });
 
@@ -335,10 +348,10 @@ it('rejects every documented owner-side error code rather than passing the reque
 })->with([
     'missing-input-secret',
     'invalid-input-secret',
-    'bad-secret',
-    'no-such-user',
-    'invalid-sitekey',
-    'sitekey-mismatch',
+    'sitekey-secret-mismatch',
+    'bad-request',
+    'not-using-dummy-passcode',
+    'not-using-dummy-secret',
 ]);
 
 /*

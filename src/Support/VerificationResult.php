@@ -12,15 +12,49 @@ use Throwable;
 /**
  * The outcome of one hCaptcha siteverify call.
  *
- * `success` is hCaptcha's own verdict. It is deliberately kept separate from
- * `passed()`, which additionally applies the local hostname and score
- * assertions -- a token can be genuine and still be rejected because it was
- * minted for another hostname.
+ * `success` is hCaptcha's own verdict and is never rewritten. `accepted` is
+ * the package's final answer after the local hostname and score assertions
+ * and the fail-open policy, and it is what `passed()` returns. A token can be
+ * genuine (`success: true`) and still not accepted because it was minted for
+ * another hostname; an outage can be accepted under fail-open without hCaptcha
+ * ever having said yes.
  *
  * @implements Arrayable<string, mixed>
  */
 final readonly class VerificationResult implements Arrayable, JsonSerializable
 {
+    /**
+     * Codes hCaptcha documents for a token that was already checked.
+     * `token-already-used` was this package's own 1.x name for the same
+     * condition and is kept so fixtures written against it still work.
+     *
+     * @var list<string>
+     */
+    private const SPENT_TOKEN_CODES = [
+        'already-seen-response',
+        'invalid-or-already-seen-response',
+        'token-already-used',
+    ];
+
+    /**
+     * Codes that are the site owner's problem, not the visitor's.
+     *
+     * @var list<string>
+     */
+    private const CONFIGURATION_ERROR_CODES = [
+        'missing-input-secret',
+        'invalid-input-secret',
+        'sitekey-secret-mismatch',
+        'bad-request',
+        'not-using-dummy-passcode',
+        'not-using-dummy-secret',
+    ];
+
+    /**
+     * Whether the package accepts the submission. Defaults to `success`.
+     */
+    public bool $accepted;
+
     /**
      * @param  list<string>  $errorCodes
      * @param  list<string>  $scoreReasons
@@ -35,7 +69,10 @@ final readonly class VerificationResult implements Arrayable, JsonSerializable
         public ?bool $credit = null,
         public bool $serviceUnavailable = false,
         public ?string $rejectedBy = null,
-    ) {}
+        ?bool $accepted = null,
+    ) {
+        $this->accepted = $accepted ?? $success;
+    }
 
     /**
      * Build a result from a decoded siteverify payload.
@@ -86,25 +123,29 @@ final readonly class VerificationResult implements Arrayable, JsonSerializable
 
     /**
      * The token was longer than any real hCaptcha token, so it was rejected
-     * without being proxied to the service.
+     * without being proxied to the service. `token-too-long` is this
+     * package's own code: hCaptcha never saw the token, so none of its codes
+     * apply.
      */
     public static function oversizedToken(): self
     {
         return new self(
             success: false,
-            errorCodes: ['invalid-input-response'],
+            errorCodes: ['token-too-long'],
         );
     }
 
     /**
      * hCaptcha said yes, but a local assertion said no.
      *
-     * `$reason` is one of `hostname-mismatch` or `score-too-high`.
+     * `$reason` is one of `hostname-mismatch`, `hostname-unknown` or
+     * `score-too-high`. `success` is preserved: it is hCaptcha's verdict, not
+     * ours.
      */
     public function rejectedLocally(string $reason): self
     {
         return new self(
-            success: false,
+            success: $this->success,
             hostname: $this->hostname,
             challengeTs: $this->challengeTs,
             score: $this->score,
@@ -113,17 +154,18 @@ final readonly class VerificationResult implements Arrayable, JsonSerializable
             credit: $this->credit,
             serviceUnavailable: $this->serviceUnavailable,
             rejectedBy: $reason,
+            accepted: false,
         );
     }
 
     public function passed(): bool
     {
-        return $this->success;
+        return $this->accepted;
     }
 
     public function failed(): bool
     {
-        return ! $this->success;
+        return ! $this->accepted;
     }
 
     public function hasErrorCode(string $code): bool
@@ -137,8 +179,25 @@ final readonly class VerificationResult implements Arrayable, JsonSerializable
      */
     public function tokenAlreadyUsed(): bool
     {
-        return $this->hasErrorCode('token-already-used')
-            || $this->hasErrorCode('invalid-input-response');
+        return array_any(self::SPENT_TOKEN_CODES, fn (string $code): bool => $this->hasErrorCode($code));
+    }
+
+    /**
+     * The token outlived its validity window before it was verified.
+     */
+    public function tokenExpired(): bool
+    {
+        return $this->hasErrorCode('expired-input-response');
+    }
+
+    /**
+     * The token was not something hCaptcha could parse, or was rejected here
+     * before being sent.
+     */
+    public function tokenMalformed(): bool
+    {
+        return $this->hasErrorCode('invalid-input-response')
+            || $this->hasErrorCode('token-too-long');
     }
 
     public function tokenMissing(): bool
@@ -152,7 +211,7 @@ final readonly class VerificationResult implements Arrayable, JsonSerializable
      */
     public function isConfigurationError(): bool
     {
-        return array_any(['missing-input-secret', 'invalid-input-secret', 'bad-secret', 'no-such-user', 'invalid-sitekey', 'sitekey-mismatch'], fn (string $code): bool => $this->hasErrorCode($code));
+        return array_any(self::CONFIGURATION_ERROR_CODES, fn (string $code): bool => $this->hasErrorCode($code));
     }
 
     /**
@@ -163,7 +222,7 @@ final readonly class VerificationResult implements Arrayable, JsonSerializable
         return match (true) {
             $this->tokenMissing() => 'hcaptcha::hcaptcha.missing',
             $this->serviceUnavailable => 'hcaptcha::hcaptcha.unavailable',
-            $this->tokenAlreadyUsed() => 'hcaptcha::hcaptcha.expired',
+            $this->tokenAlreadyUsed(), $this->tokenExpired() => 'hcaptcha::hcaptcha.expired',
             default => 'hcaptcha::hcaptcha.failed',
         };
     }
@@ -175,6 +234,7 @@ final readonly class VerificationResult implements Arrayable, JsonSerializable
     {
         return [
             'success' => $this->success,
+            'accepted' => $this->accepted,
             'hostname' => $this->hostname,
             'challenge_ts' => $this->challengeTs?->toIso8601String(),
             'score' => $this->score,
