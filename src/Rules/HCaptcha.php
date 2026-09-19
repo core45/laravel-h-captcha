@@ -6,6 +6,7 @@ namespace Core45\HCaptcha\Rules;
 
 use Closure;
 use Core45\HCaptcha\Contracts\Verifier;
+use Core45\HCaptcha\HCaptchaManager;
 use Core45\HCaptcha\Support\LivewireContext;
 use Core45\HCaptcha\Support\VerificationContext;
 use Core45\HCaptcha\Support\VerificationResult;
@@ -76,7 +77,17 @@ class HCaptcha implements ValidationRule
     {
         $token = is_string($value) ? $value : null;
 
-        return $this->verifier()->verify($token, $this->clientIp(), $this->context($attribute));
+        $result = $this->verifier()->verify($token, $this->clientIp(), $this->context($attribute));
+
+        // Whatever the verdict, a token that reached verification is spent.
+        // Inside Livewire the page is not reloaded, so the widget holding it
+        // has to be told; the bootstrap script resets the widget bound to
+        // this field within the dispatching component.
+        if ($token !== null && $token !== '') {
+            LivewireContext::component()?->dispatch(HCaptchaManager::RESET_EVENT, field: $attribute);
+        }
+
+        return $result;
     }
 
     /**

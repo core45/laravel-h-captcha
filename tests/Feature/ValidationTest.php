@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Core45\HCaptcha\HCaptchaManager;
 use Core45\HCaptcha\Rules\HCaptcha;
 use Core45\HCaptcha\Tests\Fixtures\CaptchaGuardedComponent;
 use Core45\HCaptcha\Tests\TestCase;
@@ -221,6 +222,34 @@ it('still spends the token once when one Livewire component validates the same f
         ->assertSet('submitted', true);
 
     Http::assertSentCount(1);
+});
+
+it('tells the browser to reset the widget after a token was verified inside Livewire', function (): void {
+    Http::fake(['api.hcaptcha.com/*' => Http::response(['success' => false, 'error-codes' => ['invalid-input-response']])]);
+
+    Livewire::test(CaptchaGuardedComponent::class)
+        ->set('captcha', 'spent-token')
+        ->call('submit')
+        ->assertHasErrors('captcha')
+        ->assertDispatched(HCaptchaManager::RESET_EVENT, field: 'captcha');
+});
+
+it('also resets after a successful verification, because the token is spent either way', function (): void {
+    Http::fake(['api.hcaptcha.com/*' => Http::response(['success' => true, 'hostname' => 'localhost'])]);
+    config()->set('hcaptcha.hostnames', 'localhost');
+
+    Livewire::test(CaptchaGuardedComponent::class)
+        ->set('captcha', 'good-token')
+        ->call('submit')
+        ->assertHasNoErrors()
+        ->assertDispatched(HCaptchaManager::RESET_EVENT, field: 'captcha');
+});
+
+it('does not dispatch a reset when no token was submitted', function (): void {
+    Livewire::test(CaptchaGuardedComponent::class)
+        ->call('submit')
+        ->assertHasErrors('captcha')
+        ->assertNotDispatched(HCaptchaManager::RESET_EVENT);
 });
 
 it('sends an explicit expected sitekey from the rule object', function (): void {
