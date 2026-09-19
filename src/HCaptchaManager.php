@@ -255,6 +255,14 @@ class HCaptchaManager
 
             if ($key === null || $key === '') {
                 if ($component !== null) {
+                    // Belt and braces for the test harness, not for Octane.
+                    // The manager is a scoped binding, so a real request --
+                    // FPM or Octane alike -- always starts with fresh
+                    // counters. Livewire::test() reuses one manager instance
+                    // across mount and a following update, which would keep
+                    // incrementing; keying the counter on the rendering
+                    // component object restarts it there the way a genuine
+                    // request boundary would.
                     $renderToken = spl_object_id($component);
 
                     if (($this->widgetScopeRenders[$scope] ?? null) !== $renderToken) {
