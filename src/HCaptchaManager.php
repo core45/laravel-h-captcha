@@ -15,6 +15,7 @@ use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Support\Facades\Vite;
 use Illuminate\Support\HtmlString;
 use InvalidArgumentException;
+use Psr\Log\LoggerInterface;
 use RuntimeException;
 
 /**
@@ -68,6 +69,15 @@ class HCaptchaManager
     protected array $widgetScopeRenders = [];
 
     /**
+     * Whether the "widget degraded for want of a site key" warning has been
+     * logged by this process. Static for the same reason as
+     * `HttpVerifier::$hostnameCheckInactiveLogged`: the point is to log once
+     * per worker, not once per widget or per request, so a page rendering
+     * several misconfigured widgets does not flood the log.
+     */
+    private static bool $misconfiguredLogged = false;
+
+    /**
      * Whether a configured value is a real credential, rather than unset or one
      * of the placeholders above.
      */
@@ -82,7 +92,16 @@ class HCaptchaManager
         protected Repository $config,
         protected Verifier $verifier,
         protected Application $app,
+        protected LoggerInterface $logger,
     ) {}
+
+    /**
+     * Reset the once-per-process log latch. For tests.
+     */
+    public static function forgetLoggedWarnings(): void
+    {
+        self::$misconfiguredLogged = false;
+    }
 
     /**
      * Verify a token. Idempotent per request -- see the Verifier contract.
@@ -117,7 +136,38 @@ class HCaptchaManager
      */
     public function configured(?string $override = null): bool
     {
-        return self::isUsableCredential($override ?? $this->config->get('hcaptcha.sitekey'));
+        $configured = self::isUsableCredential($override ?? $this->config->get('hcaptcha.sitekey'));
+
+        if (! $configured) {
+            $this->logMisconfiguredOnce();
+        }
+
+        return $configured;
+    }
+
+    /**
+     * Warn once per process that a widget degraded because no usable site key
+     * resolved. Both render paths (the Blade component and the Filament
+     * field) reach this through `configured()`, so the two behave identically
+     * and an operator gets the same signal regardless of which one they used.
+     *
+     * Skipped when `app.debug` is true: the visible `hcaptcha-misconfigured`
+     * notice the view renders in that case already tells the developer, and
+     * logging on top of it would be redundant.
+     */
+    private function logMisconfiguredOnce(): void
+    {
+        if (self::$misconfiguredLogged || $this->config->get('app.debug')) {
+            return;
+        }
+
+        self::$misconfiguredLogged = true;
+
+        $this->logger->warning(
+            'hCaptcha widget rendered nothing: no usable HCAPTCHA_SITEKEY (or hcaptcha.sitekey) is configured. '
+            .'Validation still rejects every submission, so the form fails closed with no way for a visitor to satisfy it. '
+            .'Logged once per process.'
+        );
     }
 
     /**

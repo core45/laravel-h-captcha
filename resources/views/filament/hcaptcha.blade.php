@@ -48,6 +48,7 @@
             wire:model="{{ $getStatePath() }}"
         >
 
+        {{-- Live region the bootstrap script writes pending/error feedback into. --}}
         <p id="{{ $getWidgetId() }}-status" class="hcaptcha-status" role="status" aria-live="polite" hidden></p>
     @endif
 </x-dynamic-component>

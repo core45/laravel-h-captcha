@@ -7,6 +7,7 @@ use Core45\HCaptcha\Tests\Fixtures\BladeRenderInsideLivewireComponent;
 use Core45\HCaptcha\Tests\Fixtures\BrowserGuardedForm;
 use Core45\HCaptcha\Tests\TestCase;
 use Illuminate\Support\Facades\Blade;
+use Illuminate\Support\Facades\Log;
 use Livewire\Livewire;
 
 /**
@@ -174,6 +175,32 @@ it('warns the developer about a missing site key while debugging', function (): 
     config()->set('app.debug', true);
 
     expect(renderWidget())->toContain('HCAPTCHA_SITEKEY is not set');
+});
+
+it('logs a misconfiguration warning once per process, not once per degraded widget', function (): void {
+    HCaptchaManager::forgetLoggedWarnings();
+    config()->set('hcaptcha.sitekey', null);
+    config()->set('app.debug', false);
+
+    Log::shouldReceive('warning')
+        ->once()
+        ->withArgs(fn (string $message): bool => str_contains($message, 'no usable HCAPTCHA_SITEKEY'));
+
+    Log::shouldReceive('info')->zeroOrMoreTimes();
+    Log::shouldReceive('error')->zeroOrMoreTimes();
+
+    renderWidget();
+    renderWidget();
+});
+
+it('does not log the misconfiguration warning while the debug notice already shows it', function (): void {
+    HCaptchaManager::forgetLoggedWarnings();
+    config()->set('hcaptcha.sitekey', null);
+    config()->set('app.debug', true);
+
+    Log::shouldReceive('warning')->never();
+
+    renderWidget();
 });
 
 it('renders with an explicit sitekey when no global sitekey is configured', function (): void {
