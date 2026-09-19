@@ -242,8 +242,8 @@ It calls `$fail($result->messageKey())->translate()`, and `VerificationResult::m
 
 - `hcaptcha::hcaptcha.missing` — no token was submitted at all
 - `hcaptcha::hcaptcha.unavailable` — hCaptcha could not be reached and the package failed closed
-- `hcaptcha::hcaptcha.expired` — the token was already spent (`token-already-used` / `invalid-input-response`)
-- `hcaptcha::hcaptcha.failed` — anything else hCaptcha rejected
+- `hcaptcha::hcaptcha.expired` — the token was already spent (`already-seen-response`) or expired (`expired-input-response`)
+- `hcaptcha::hcaptcha.failed` — anything else hCaptcha rejected — including a malformed token (`invalid-input-response`)
 
 ### The `hcaptcha` string rule, and the `captcha` alias
 
@@ -355,11 +355,12 @@ Error codes follow [hCaptcha's siteverify table](https://docs.hcaptcha.com/#site
 
 ## Upgrading from 1.x
 
-2.0.0 changes behaviour in four places. Each is a correctness fix; none needs a code change for the common case of one form guarded by the rule and/or the middleware.
+2.0.0 changes behaviour in five places. Each is a correctness fix; none needs a code change for the common case of one form guarded by the rule and/or the middleware.
 
 - **`VerificationResult::success` is now hCaptcha's verdict only.** Read `accepted` (or call `passed()`) for the final answer. In 1.x a local rejection overwrote `success` with `false`; now it leaves `success` as `true` and sets `accepted: false`. Anything that branched on `->success` should branch on `->passed()`.
 - **The audit table has a new `accepted` column.** Run `php artisan migrate`. If you published the migrations, publish again with `php artisan vendor:publish --tag=hcaptcha-migrations`. The `failed()` model scope now filters on `accepted`.
 - **Memoization is scoped to the executing Livewire component.** Two components validating the same property name in one batched request no longer share a verdict. The middleware and the rule on the same field in a plain form still collapse to one call. If you called `HCaptcha::verify($token, $ip, 'some-scope')` with your own scope string, that still works and now means "field".
+- **Stacking the middleware on a Livewire update route no longer shares a verdict with the rule.** The rule scopes by the executing component; the middleware cannot, so the second check is told `already-seen-response`. Guard a Livewire form with the rule alone, which was always the documented setup.
 - **Error codes are hCaptcha's.** `tokenAlreadyUsed()` now matches `already-seen-response`; `token-already-used` is kept as an alias. `expired-input-response` reports the expired message; `invalid-input-response` no longer does. `isConfigurationError()` recognises `sitekey-secret-mismatch`, `bad-request` and the dummy-passcode codes and no longer lists codes hCaptcha never returns.
 - **An install that relied on 1.x rejecting an unreported hostname should set `HCAPTCHA_HOSTNAMES_STRICT=true`.** A missing or `not-provided` hostname now passes with a warning by default; the authoritative origin control is the domain allowlist on the sitekey in the hCaptcha dashboard, not this check.
 
@@ -369,7 +370,7 @@ Two defaults changed without changing behaviour: `retries` now counts *additiona
 
 Enable with `HCAPTCHA_LOGGING=true` (or `hcaptcha.logging.enabled`) and run the published migration. Every verification attempt — success or failure — writes one row to `hcaptcha_verifications` (configurable table/connection) via `Core45\HCaptcha\Support\VerificationLogger`, which never lets a logging failure fail the verification itself.
 
-Stored: `success`, `token_hash` (SHA-256 of the token), `hostname`, `challenge_ts`, `score`, `error_codes` (JSON), `rejected_by`, plus `ip` / `user_agent` / `url` when their respective PII toggles are on, and timestamps.
+Stored: `success`, `accepted`, `token_hash` (SHA-256 of the token), `hostname`, `challenge_ts`, `score`, `error_codes` (JSON), `rejected_by`, plus `ip` / `user_agent` / `url` when their respective PII toggles are on, and timestamps.
 
 **Deliberately not stored: the raw token.** It is a single-use credential — by the time it could be logged it is already spent, so keeping it would be a liability with no benefit. Only its SHA-256 hash is kept, which is enough to correlate a replay without being able to replay it yourself.
 

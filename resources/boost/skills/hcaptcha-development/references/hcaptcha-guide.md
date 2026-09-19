@@ -171,7 +171,7 @@ hostnames in the hCaptcha dashboard too — that allowlist is off by default for
 skipping it leaves both layers of the origin check absent.
 
 `max_score` is a **risk** score — the inverse of reCAPTCHA v3, where higher means more bot-like —
-and only Publisher/Pro accounts ever populate `score` in the response; on other accounts the check
+and only Enterprise accounts ever populate `score` in the response; on other accounts the check
 is silently skipped because `$result->score` is `null`.
 
 ## The widget
@@ -273,7 +273,7 @@ public function messageKey(): string
 }
 ```
 
-`tokenAlreadyUsed()` checks both `token-already-used` and `invalid-input-response` error codes.
+`tokenAlreadyUsed()` matches `already-seen-response` and `invalid-or-already-seen-response` (plus the 1.x alias `token-already-used`); `tokenExpired()` matches `expired-input-response`; `tokenMalformed()` matches `invalid-input-response` and `token-too-long`.
 `clientIp()` reads from the bound `Request` unless one was passed to the constructor; hCaptcha
 treats `remoteip` as a signal, not an assertion, so a missing/proxied IP only costs accuracy, never
 correctness.
@@ -470,14 +470,17 @@ depends on `fail_open`:
 
 Configuration errors are distinguished from visitor-caused rejections by
 `isConfigurationError()`, which checks for: `missing-input-secret`, `invalid-input-secret`,
-`bad-secret`, `no-such-user`, `invalid-sitekey`, `sitekey-mismatch`. These are logged at `error`
+`sitekey-secret-mismatch`, `bad-request`, `not-using-dummy-passcode`, `not-using-dummy-secret`.
+These are logged at `error`
 level (`HttpVerifier::report()`), since they mean the site owner misconfigured the package, not
 that the visitor did anything wrong.
 
 Full set of error codes this package interprets directly: `missing-input-response` (→
-`tokenMissing()`), `token-already-used` and `invalid-input-response` (→ `tokenAlreadyUsed()`), plus
+`tokenMissing()`), `already-seen-response` / `invalid-or-already-seen-response` / the 1.x alias
+`token-already-used` (→ `tokenAlreadyUsed()`), `expired-input-response` (→ `tokenExpired()`),
+`invalid-input-response` / `token-too-long` (→ `tokenMalformed()`), plus
 the configuration-error set above and the two locally-appended reasons `hostname-mismatch` /
-`score-too-high`. Any other code from hCaptcha's response (e.g. `bad-request`, `invalid-user-ip`,
+`score-too-high`. Any other code from hCaptcha's response (e.g. `invalid-user-ip`,
 `internal-error`) is preserved in `errorCodes` but falls through to the generic
 `hcaptcha::hcaptcha.failed` message.
 

@@ -241,7 +241,9 @@ it('fails open only when explicitly configured to', function (): void {
 it('fails open even when a hostname policy is configured', function (): void {
     config()->set('hcaptcha.fail_open', true);
     config()->set('hcaptcha.hostnames', ['example.test']);
-    fakeSiteverify([], 503);
+    Http::fake([
+        'api.hcaptcha.com/*' => Http::response('<html>Service unavailable</html>', 503),
+    ]);
 
     $result = verifier()->verify(TestCase::TEST_TOKEN);
 
@@ -251,11 +253,49 @@ it('fails open even when a hostname policy is configured', function (): void {
         ->and($result->rejectedBy)->toBeNull();
 });
 
-it('never turns a provider rejection into acceptance under fail-open', function (): void {
+it('never turns a provider rejection into acceptance under fail-open', function (int $status): void {
     config()->set('hcaptcha.fail_open', true);
-    fakeSiteverify(['success' => false, 'error-codes' => ['already-seen-response']]);
+    Http::fake([
+        'api.hcaptcha.com/*' => Http::response(['success' => false, 'error-codes' => ['already-seen-response']], $status),
+    ]);
 
-    expect(verifier()->verify(TestCase::TEST_TOKEN)->passed())->toBeFalse();
+    $result = verifier()->verify(TestCase::TEST_TOKEN);
+
+    expect($result->passed())->toBeFalse()
+        ->and($result->serviceUnavailable)->toBeFalse()
+        ->and($result->hasErrorCode('already-seen-response'))->toBeTrue();
+})->with([
+    '200' => 200,
+    '400' => 400,
+]);
+
+it('logs a configuration error carried in a non-2xx verdict body', function (): void {
+    config()->set('hcaptcha.hostnames', ['example.test']);
+    Http::fake([
+        'api.hcaptcha.com/*' => Http::response(['success' => false, 'error-codes' => ['bad-request']], 400),
+    ]);
+
+    Log::shouldReceive('error')
+        ->once()
+        ->withArgs(fn (string $message): bool => str_contains($message, 'configuration problem'));
+    Log::shouldReceive('warning')->zeroOrMoreTimes();
+    Log::shouldReceive('info')->zeroOrMoreTimes();
+
+    $result = verifier()->verify(TestCase::TEST_TOKEN);
+
+    expect($result->failed())->toBeTrue()
+        ->and($result->isConfigurationError())->toBeTrue();
+});
+
+it('still treats a non-2xx response without a verdict body as an outage', function (): void {
+    Http::fake([
+        'api.hcaptcha.com/*' => Http::response('<html>Bad gateway</html>', 502),
+    ]);
+
+    $result = verifier()->verify(TestCase::TEST_TOKEN);
+
+    expect($result->serviceUnavailable)->toBeTrue()
+        ->and($result->passed())->toBeFalse();
 });
 
 /*
@@ -303,6 +343,14 @@ it('sends the sitekey carried by the context instead of the configured one', fun
     ));
 
     Http::assertSent(fn (Request $request): bool => $request['sitekey'] === '20000000-ffff-ffff-ffff-000000000002');
+});
+
+it('falls back to the configured sitekey when the context carries an empty one', function (): void {
+    fakeSiteverify();
+
+    verifier()->verify(TestCase::TEST_TOKEN, null, new VerificationContext(field: 'f', sitekey: ''));
+
+    Http::assertSent(fn (Request $request): bool => $request['sitekey'] === TestCase::TEST_SITEKEY);
 });
 
 it('keeps verdicts apart when the same field is verified for two different actions', function (): void {

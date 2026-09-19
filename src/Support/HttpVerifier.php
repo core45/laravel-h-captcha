@@ -160,7 +160,7 @@ final class HttpVerifier implements Verifier
         // The context's sitekey wins: it is the key the widget was rendered
         // with, supplied by server code. hCaptcha answers
         // `sitekey-secret-mismatch` if the token was minted for another key.
-        $sitekey = $context->sitekey ?? $this->config->get('hcaptcha.sitekey');
+        $sitekey = $context->sitekey !== null && $context->sitekey !== '' ? $context->sitekey : $this->config->get('hcaptcha.sitekey');
 
         if ($this->config->get('hcaptcha.send_sitekey', true) && is_string($sitekey) && $sitekey !== '') {
             $body['sitekey'] = $sitekey;
@@ -188,6 +188,23 @@ final class HttpVerifier implements Verifier
             return $this->unavailable();
         }
 
+        $payload = $response->json();
+
+        // A non-2xx status with a decodable siteverify body is still hCaptcha's
+        // verdict (a 400 with `bad-request`, for instance), and it must fail
+        // closed like any other rejection. Only a body we cannot read as a
+        // verdict is an outage, because there is no verdict to apply.
+        if (is_array($payload) && array_key_exists('success', $payload)) {
+            if ($response->failed()) {
+                $this->logger->warning('hCaptcha verification returned an error status with a verdict body.', [
+                    'status' => $response->status(),
+                ]);
+            }
+
+            /** @var array<string, mixed> $payload */
+            return VerificationResult::fromResponse($payload);
+        }
+
         if ($response->failed()) {
             $this->logger->warning('hCaptcha verification returned an error status.', [
                 'status' => $response->status(),
@@ -196,16 +213,9 @@ final class HttpVerifier implements Verifier
             return $this->unavailable();
         }
 
-        $payload = $response->json();
+        $this->logger->warning('hCaptcha verification returned an unreadable body.');
 
-        if (! is_array($payload)) {
-            $this->logger->warning('hCaptcha verification returned an unreadable body.');
-
-            return $this->unavailable();
-        }
-
-        /** @var array<string, mixed> $payload */
-        return VerificationResult::fromResponse($payload);
+        return $this->unavailable();
     }
 
     /**

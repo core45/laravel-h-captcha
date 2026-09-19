@@ -16,6 +16,7 @@ All notable changes to `core45/laravel-h-captcha` are documented in this file, i
 - `retries` counts additional attempts and defaults to `0`. The 1.x default of `1` was passed straight to the HTTP client's total-attempt count, so it also made one attempt.
 - The "hostname check is inactive" error is logged once per process.
 - `HCaptchaManager::configured()` accepts an override; the Blade component renders with an explicit `sitekey` when no global key is set and degrades instead of throwing when the override is a placeholder.
+- An empty `sitekey` in a `VerificationContext` or `Rules\HCaptcha` falls back to the configured key instead of suppressing `send_sitekey`.
 
 ### Added
 
@@ -30,6 +31,7 @@ All notable changes to `core45/laravel-h-captcha` are documented in this file, i
 - `fail_open` did nothing when a hostname policy was configured, which is the default: the outage verdict had no hostname and the hostname check rejected it. Local assertions are now skipped for a service-unavailable verdict. A provider rejection is still never accepted.
 - `sitekey-secret-mismatch` is now logged as a configuration error instead of failing visitors silently.
 - The middleware reads a configured field name containing a dot as a literal key rather than a nested path.
+- A non-2xx siteverify response whose body still carries a verdict (for example `400` with `bad-request`) is now applied as that verdict and fails closed, instead of being treated as an outage that `fail_open` could accept.
 
 ## 1.0.0 - 2026-09-17
 
