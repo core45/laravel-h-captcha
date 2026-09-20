@@ -4,6 +4,40 @@ All notable changes to `core45/laravel-h-captcha` are documented in this file, i
 [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## 2.0.4 - 2026-09-20
+
+Documentation only. No runtime code changed.
+
+A full re-verification of the shipped Boost skill against the package source found nine claims the
+code does not support. Three are the same `success`/`accepted` and reset-dispatch corrections made
+in earlier 2.0.x releases, which had been applied in one section and missed in another.
+
+### Fixed
+
+- `rejectedLocally()` was documented as flipping `success` to `false`. It preserves `success` —
+  hCaptcha's own verdict — and sets `accepted` to `false`. After a local hostname or score
+  rejection, `success` stays `true` and `accepted` is `false`.
+- The fail-open outcome was documented as `success: true`. `HttpVerifier::unavailable()` returns
+  `success: false` with `accepted: true`: hCaptcha never said yes, so only the package's own verdict
+  changes. Anything querying the audit trail for fail-open rows on `success` would have found none.
+- The reproduced config block dropped the legacy env fallbacks, showing `env('HCAPTCHA_SITEKEY')`
+  where the real config reads `env('HCAPTCHA_SITEKEY', env('CAPTCHA_SITEKEY'))`, and likewise for
+  the secret. This contradicted the migration section of the same file, which documents the
+  `HCAPTCHA_*` over `CAPTCHA_*` precedence correctly.
+- The Blade component's constructor argument list omitted `profile`, although the same guide shows
+  `<x-hcaptcha profile="marketing" />` as valid usage.
+- The attribute-name pattern was quoted as `^[A-Za-z][A-Za-z0-9-]*$`. The real check also permits
+  `.` and `_` after the first character.
+- The "full set of error codes" named two locally-appended reasons. There are three:
+  `hostname-unknown` is appended when `hostnames_strict` rejects a missing or `not-provided`
+  hostname.
+- The Livewire widget reset was described in the guide as firing after *any* verification. The
+  dispatch is guarded on a non-empty token, so a submission carrying no token does not trigger it.
+- The same reset overstatement in `SKILL.md` ("after every submit") is corrected to match.
+- The `hcaptcha-migrations` publish tag was described as publishing only the table-creation
+  migration. It publishes the whole `database/migrations/` directory, which also contains the
+  migration adding the `accepted` column.
+
 ## 2.0.3 - 2026-09-20
 
 Documentation only. No runtime code changed. 2.0.2 was never tagged or published; that version

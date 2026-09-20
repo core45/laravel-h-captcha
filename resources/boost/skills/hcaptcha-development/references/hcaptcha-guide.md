@@ -24,7 +24,8 @@ Other publish tags, from `HCaptchaServiceProvider::bootPublishing()`:
 
 - `hcaptcha-lang` → `lang/vendor/hcaptcha/{locale}/hcaptcha.php`
 - `hcaptcha-views` → `resources/views/vendor/hcaptcha/*.blade.php`
-- `hcaptcha-migrations` → `database/migrations/*_create_hcaptcha_verifications_table.php`
+- `hcaptcha-migrations` → the whole `database/migrations/` directory, which is two files:
+  `*_create_hcaptcha_verifications_table.php` and `*_add_accepted_to_hcaptcha_verifications_table.php`
 
 `hcaptcha-migrations` only needs publishing if you want to own the audit migration yourself —
 switching the audit trail on is enough for the package to load its own copy, so the usual path is
@@ -124,8 +125,8 @@ evaluated once by `php artisan config:cache` and frozen. This is why the widget 
 at render time in `HCaptchaManager::locale()`, not baked into the config file.
 
 ```php
-'sitekey' => env('HCAPTCHA_SITEKEY'),
-'secret' => env('HCAPTCHA_SECRET'),
+'sitekey' => env('HCAPTCHA_SITEKEY', env('CAPTCHA_SITEKEY')),
+'secret' => env('HCAPTCHA_SECRET', env('CAPTCHA_SECRET')),
 'profiles' => [
     // 'marketing' => [
     //     'sitekey' => env('HCAPTCHA_MARKETING_SITEKEY'),
@@ -260,9 +261,9 @@ another, even for the same token and field.
 <x-hcaptcha model="captchaToken" />   {{-- Livewire --}}
 ```
 
-`Core45\HCaptcha\View\Components\HCaptcha` constructor arguments: `sitekey`, `theme`, `size`,
-`locale`, `id`, `script` (bool, default `true`), `model` (Livewire property name), `options`
-(array of extra `data-*` overrides). There is no `explicit` argument — every widget always renders
+`Core45\HCaptcha\View\Components\HCaptcha` constructor arguments: `sitekey`, `profile` (a named
+credential profile from `hcaptcha.profiles`), `theme`, `size`, `locale`, `id`, `script` (bool,
+default `true`), `model` (Livewire property name), `options` (array of extra `data-*` overrides). There is no `explicit` argument — every widget always renders
 in hCaptcha's explicit mode; see the next section.
 
 Attribute keys passed through `options`/`theme`/`size` are normalised: anything not already
@@ -273,7 +274,7 @@ attributes on the container div. Every attribute value is escaped through `e()` 
 which was an injection point.
 
 Attribute *names* are validated, not merely escaped: `normaliseAttribute()` throws
-`InvalidArgumentException` unless the normalised name matches `^[A-Za-z][A-Za-z0-9-]*$`, because
+`InvalidArgumentException` unless the normalised name matches `^[A-Za-z][A-Za-z0-9._-]*$`, because
 `e()` escapes `& < > " '` in the value but not whitespace or `=` in the key — a key like
 `data-x onmouseover=alert(1)` would otherwise render as a second, live attribute. The two JavaScript
 globals the package emits into `<script>` tags, `core45HCaptchaOnLoad` and `core45HCaptcha`, are
@@ -457,10 +458,14 @@ anywhere in the document — a Livewire morph, an Alpine toggle, a modal, plain 
 prunes a widget's entry from the registry once its element is removed. There is no hook list to
 maintain: the observer watches the whole document, not specific Livewire lifecycle events.
 
-**Reset is automatic, not something you call.** hCaptcha tokens are single-use, so after *any*
-verification inside a Livewire component — accepted or rejected, even when a different field on the
-same form failed — `Rules\HCaptcha` dispatches `core45HCaptcha:reset` with the validated field name,
+**Reset is automatic, not something you call.** hCaptcha tokens are single-use, so whenever a token
+is actually verified inside a Livewire component — accepted or rejected, even when a different field
+on the same form failed — `Rules\HCaptcha` dispatches `core45HCaptcha:reset` with the validated field
+name,
 and the bootstrap resets exactly that widget. Calling `$this->dispatch('core45HCaptcha:reset')`
+A submission carrying no token at all is the one exception: `Rules\HCaptcha` guards the dispatch
+with `if ($token !== null && $token !== '')`, because nothing was spent and there is no widget state
+to clear. Calling `$this->dispatch('core45HCaptcha:reset')`
 yourself is no longer needed and, if you do it, changes the event's meaning: an event with a `field`
 in its detail resets that one widget (the rule's own shape), an event with an `id` resets one widget
 by DOM id, and an event with neither resets every widget on the page.
@@ -556,8 +561,9 @@ assertions after a genuine `success: true` response:
 2. **Score check** — if `max_score` is configured and the response's `score` exceeds it, the result
    becomes `rejectedLocally('score-too-high')`.
 
-`rejectedLocally()` flips `success` to `false`, appends the reason to `errorCodes`, and sets
-`rejectedBy`. Both of these get logged as `warning` (not `error`, since the token itself was
+`rejectedLocally()` sets `accepted` to `false`, appends the reason to `errorCodes`, and sets
+`rejectedBy`. It deliberately leaves `success` alone — that is hCaptcha's verdict, not the
+package's, so on a local rejection `success` stays `true` while `accepted` becomes `false`. Both of these get logged as `warning` (not `error`, since the token itself was
 genuine) via `HttpVerifier::report()`.
 
 ## Failure modes and error codes
@@ -575,9 +581,11 @@ depends on `fail_open`:
 - **`fail_open = false` (default, fail closed):** `VerificationResult::unavailable()` —
   `success: false`, `errorCodes: ['service-unavailable']`, `serviceUnavailable: true`. The form is
   rejected. This is the safer default: an hCaptcha outage should not become an open door for spam.
-- **`fail_open = true`:** a result with `success: true` but still `errorCodes: ['service-unavailable']`
-  and `serviceUnavailable: true` — the submission is accepted, but the outage is still visible to
-  anything inspecting the result (including the audit trail, if enabled).
+- **`fail_open = true`:** a result with `accepted: true` but `success: false`, plus
+  `errorCodes: ['service-unavailable']` and `serviceUnavailable: true` — the submission is accepted,
+  but the outage is still visible to anything inspecting the result (including the audit trail, if
+  enabled). `success` stays `false` because hCaptcha never said yes; `accepted` is the package's own
+  decision to let the submission through anyway.
 
 Configuration errors are distinguished from visitor-caused rejections by
 `isConfigurationError()`, which checks for: `missing-input-secret`, `invalid-input-secret`,
@@ -590,8 +598,8 @@ Full set of error codes this package interprets directly: `missing-input-respons
 `tokenMissing()`), `already-seen-response` / `invalid-or-already-seen-response` / the 1.x alias
 `token-already-used` (→ `tokenAlreadyUsed()`), `expired-input-response` (→ `tokenExpired()`),
 `invalid-input-response` / `token-too-long` (→ `tokenMalformed()`), plus
-the configuration-error set above and the two locally-appended reasons `hostname-mismatch` /
-`score-too-high`. Any other code from hCaptcha's response (e.g. `invalid-user-ip`,
+the configuration-error set above and the three locally-appended reasons `hostname-mismatch`,
+`hostname-unknown` (only when `hostnames_strict` is on) and `score-too-high`. Any other code from hCaptcha's response (e.g. `invalid-user-ip`,
 `internal-error`) is preserved in `errorCodes` but falls through to the generic
 `hcaptcha::hcaptcha.failed` message.
 

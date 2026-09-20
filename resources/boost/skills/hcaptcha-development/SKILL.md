@@ -92,7 +92,7 @@ Route::post('/contact', Controller::class)->middleware(['throttle:10,1', 'hcaptc
 Throws `ValidationException` on failure — a 422 or redirect-with-errors, never a 500. Verifies every request it sees (no method allowlist), so keep it off any route that also serves the form's GET, and pair it with `throttle` since it does no rate limiting itself.
 
 ### Livewire
-The rule resets the widget whose token it verified after every submit (success or failure) by dispatching `core45HCaptcha:reset` with the validated field — don't dispatch it yourself. Keep `wire:ignore` on the widget container.
+The rule resets the widget whose token it verified — on success or failure — by dispatching `core45HCaptcha:reset` with the validated field; don't dispatch it yourself. A submit carrying no token at all is the exception: the dispatch is guarded on a non-empty token, since nothing was spent. Keep `wire:ignore` on the widget container.
 
 ### Filament
 ```php
