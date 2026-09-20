@@ -25,9 +25,9 @@ jobs:
         livewire: ['4']
         include:
           - laravel: '12'
-            testbench: '9.*|10.*'
+            testbench: '^10.0'
           - laravel: '13'
-            testbench: '10.*|11.*'
+            testbench: '^11.0'
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -46,13 +46,12 @@ jobs:
 
       - name: Require matrix versions
         run: |
-          composer require --no-update \
-            "illuminate/contracts:^${{ matrix.laravel }}.0" \
-            "illuminate/database:^${{ matrix.laravel }}.0" \
-            "illuminate/http:^${{ matrix.laravel }}.0" \
-            "illuminate/support:^${{ matrix.laravel }}.0" \
-            "illuminate/validation:^${{ matrix.laravel }}.0" \
-            "illuminate/view:^${{ matrix.laravel }}.0"
+          # laravel/framework replaces every illuminate/* package, so requiring
+          # the split packages by version alongside it cannot resolve. Testbench
+          # pulls the framework in, so the framework constraint is what pins the
+          # Laravel version under test.
+          composer require --no-update --dev \
+            "laravel/framework:^${{ matrix.laravel }}.0"
           composer require --no-update --dev \
             "livewire/livewire:^${{ matrix.livewire }}.0" \
             "orchestra/testbench:${{ matrix.testbench }}"
@@ -76,9 +75,9 @@ jobs:
         laravel: ['12', '13']
         include:
           - laravel: '12'
-            testbench: '9.*|10.*'
+            testbench: '^10.0'
           - laravel: '13'
-            testbench: '10.*|11.*'
+            testbench: '^11.0'
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -97,13 +96,12 @@ jobs:
 
       - name: Require matrix versions and drop optional integrations
         run: |
-          composer require --no-update \
-            "illuminate/contracts:^${{ matrix.laravel }}.0" \
-            "illuminate/database:^${{ matrix.laravel }}.0" \
-            "illuminate/http:^${{ matrix.laravel }}.0" \
-            "illuminate/support:^${{ matrix.laravel }}.0" \
-            "illuminate/validation:^${{ matrix.laravel }}.0" \
-            "illuminate/view:^${{ matrix.laravel }}.0"
+          # laravel/framework replaces every illuminate/* package, so requiring
+          # the split packages by version alongside it cannot resolve. Testbench
+          # pulls the framework in, so the framework constraint is what pins the
+          # Laravel version under test.
+          composer require --no-update --dev \
+            "laravel/framework:^${{ matrix.laravel }}.0"
           composer require --no-update --dev "orchestra/testbench:${{ matrix.testbench }}"
           # The point of this job: the package must work with neither optional
           # integration installed. Only the core suites run here.
@@ -125,9 +123,9 @@ jobs:
         laravel: ['12', '13']
         include:
           - laravel: '12'
-            testbench: '9.*|10.*'
+            testbench: '^10.0'
           - laravel: '13'
-            testbench: '10.*|11.*'
+            testbench: '^11.0'
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -146,13 +144,12 @@ jobs:
 
       - name: Pin Livewire 3 and drop Filament
         run: |
-          composer require --no-update \
-            "illuminate/contracts:^${{ matrix.laravel }}.0" \
-            "illuminate/database:^${{ matrix.laravel }}.0" \
-            "illuminate/http:^${{ matrix.laravel }}.0" \
-            "illuminate/support:^${{ matrix.laravel }}.0" \
-            "illuminate/validation:^${{ matrix.laravel }}.0" \
-            "illuminate/view:^${{ matrix.laravel }}.0"
+          # laravel/framework replaces every illuminate/* package, so requiring
+          # the split packages by version alongside it cannot resolve. Testbench
+          # pulls the framework in, so the framework constraint is what pins the
+          # Laravel version under test.
+          composer require --no-update --dev \
+            "laravel/framework:^${{ matrix.laravel }}.0"
           composer require --no-update --dev \
             "livewire/livewire:^3.6" \
             "orchestra/testbench:${{ matrix.testbench }}"
