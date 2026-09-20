@@ -31,10 +31,10 @@
         "larastan/larastan": "^3.8",
         "laravel/pint": "^1.30.5",
         "livewire/livewire": "^3.6|^4.1",
-        "orchestra/testbench": "^9.0|^10.0|^11.2",
+        "orchestra/testbench": "^10.10|^11.2",
         "pestphp/pest": "^5.1.1",
         "pestphp/pest-plugin-browser": "^5.0",
-        "pestphp/pest-plugin-laravel": "^5.0.1",
+        "pestphp/pest-plugin-laravel": "^5.0",
         "pestphp/pest-plugin-rector": "^5.0.3",
         "phpunit/phpunit": "^13.3.0",
         "rector/rector": "^2.6.2"
