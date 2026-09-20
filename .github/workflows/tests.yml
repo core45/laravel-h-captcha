@@ -40,7 +40,7 @@ jobs:
           coverage: none
 
       - name: Install Composer dependencies (base)
-        uses: ramsey/composer-install@v3
+        uses: ramsey/composer-install@v4
         with:
           composer-options: "--no-install"
 
@@ -104,7 +104,7 @@ jobs:
           coverage: none
 
       - name: Install Composer dependencies (base)
-        uses: ramsey/composer-install@v3
+        uses: ramsey/composer-install@v4
         with:
           composer-options: "--no-install"
 
@@ -166,7 +166,7 @@ jobs:
           coverage: none
 
       - name: Install Composer dependencies (base)
-        uses: ramsey/composer-install@v3
+        uses: ramsey/composer-install@v4
         with:
           composer-options: "--no-install"
 
