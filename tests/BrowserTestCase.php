@@ -11,7 +11,7 @@ use Illuminate\Routing\Router;
  * so Http::fake(), config()->set() and static state set in a test apply to
  * the pages Chromium loads during that test.
  */
-abstract class BrowserTestCase extends TestCase
+abstract class BrowserTestCase extends IntegrationTestCase
 {
     public const FAKE_API_PATH = '/_hcaptcha-tests/fake-api.js';
 

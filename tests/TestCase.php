@@ -17,7 +17,6 @@ use Filament\Forms\FormsServiceProvider;
 use Filament\Infolists\InfolistsServiceProvider;
 use Filament\Notifications\NotificationsServiceProvider;
 use Filament\Schemas\SchemasServiceProvider;
-use Filament\Support\Livewire\Partials\DataStoreOverride;
 use Filament\Support\SupportServiceProvider;
 use Filament\Tables\TablesServiceProvider;
 use Filament\Widgets\WidgetsServiceProvider;
@@ -26,7 +25,6 @@ use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\Facades\View;
 use Livewire\Livewire;
 use Livewire\LivewireServiceProvider;
-use Livewire\Mechanisms\DataStore;
 use Orchestra\Testbench\TestCase as Orchestra;
 
 class TestCase extends Orchestra
@@ -41,6 +39,13 @@ class TestCase extends Orchestra
 
     public const TEST_TOKEN = '10000000-aaaa-bbbb-cccc-000000000001';
 
+    /**
+     * Unit and Feature tests boot this case as-is and must prove the package
+     * works with no Livewire/Filament provider registered at all. Only
+     * IntegrationTestCase (and, through it, BrowserTestCase) flips this on.
+     */
+    protected bool $withIntegrations = false;
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -48,17 +53,6 @@ class TestCase extends Orchestra
         Factory::guessFactoryNamesUsing(
             fn (string $modelName): string => 'Core45\\HCaptcha\\Tests\\Database\\Factories\\'.class_basename($modelName).'Factory'
         );
-
-        // Workaround for a filament/support defect (v5.8.2): its boot() calls
-        // $this->app->bind(DataStore::class, DataStoreOverride::class) instead
-        // of singleton(). Container::bind() drops any previously registered
-        // instance, so every subsequent app(DataStore::class) call builds a
-        // fresh DataStoreOverride with an empty WeakMap -- Livewire's error
-        // bag, form state, and any other per-component data recorded through
-        // DataStore is silently lost between calls in the same request. This
-        // re-registers it as the singleton Livewire itself expects. Safe to
-        // remove once upstream fixes filament/support's binding.
-        $this->app->singleton(DataStore::class, DataStoreOverride::class);
 
         // Both managers latch a "logged this once already" flag in a static
         // property so the once-per-process warning survives across requests
@@ -68,33 +62,72 @@ class TestCase extends Orchestra
         HCaptchaManager::forgetLoggedWarnings();
         HttpVerifier::forgetLoggedWarnings();
 
-        // Fixture views and anonymous components shared by Feature and
-        // Browser tests: <x-hcaptcha-tests::layouts.app>, hcaptcha-tests::modal, ...
-        View::addNamespace('hcaptcha-tests', __DIR__.'/views');
-        Blade::anonymousComponentPath(__DIR__.'/views', 'hcaptcha-tests');
+        if ($this->withIntegrations) {
+            // Fixture views and anonymous components shared by Integration
+            // and Browser tests: <x-hcaptcha-tests::layouts.app>, hcaptcha-tests::modal, ...
+            View::addNamespace('hcaptcha-tests', __DIR__.'/views');
+            Blade::anonymousComponentPath(__DIR__.'/views', 'hcaptcha-tests');
 
-        // Fixture components referenced by tag name inside fixture views.
-        Livewire::component('hcaptcha-form-component', HCaptchaFormComponent::class);
-        Livewire::component('browser-guarded-form', BrowserGuardedForm::class);
-        Livewire::component('browser-modal', BrowserModalComponent::class);
-        Livewire::component('blade-render-inside-livewire-component', BladeRenderInsideLivewireComponent::class);
+            // Fixture components referenced by tag name inside fixture views.
+            if (class_exists(Livewire::class)) {
+                Livewire::component('hcaptcha-form-component', HCaptchaFormComponent::class);
+                Livewire::component('browser-guarded-form', BrowserGuardedForm::class);
+                Livewire::component('browser-modal', BrowserModalComponent::class);
+                Livewire::component('blade-render-inside-livewire-component', BladeRenderInsideLivewireComponent::class);
+            }
+        }
     }
 
     protected function getPackageProviders($app): array
     {
-        return [
-            LivewireServiceProvider::class,
-            SupportServiceProvider::class,
-            ActionsServiceProvider::class,
-            SchemasServiceProvider::class,
-            NotificationsServiceProvider::class,
-            InfolistsServiceProvider::class,
-            TablesServiceProvider::class,
-            WidgetsServiceProvider::class,
-            FormsServiceProvider::class,
-            FilamentServiceProvider::class,
+        $providers = [
             HCaptchaServiceProvider::class,
         ];
+
+        if (! $this->withIntegrations) {
+            return $providers;
+        }
+
+        // Real-app package discovery boots providers in alphabetical order
+        // by package name, which puts every filament/* provider before
+        // livewire/livewire. Matching that order here is what lets
+        // Filament's SupportServiceProvider::boot() bind DataStore before
+        // Livewire's own provider runs -- see IntegrationTestCase for why
+        // that ordering matters.
+        $integrationProviders = [];
+
+        if (class_exists(SupportServiceProvider::class)) {
+            $integrationProviders[] = SupportServiceProvider::class;
+        }
+        if (class_exists(ActionsServiceProvider::class)) {
+            $integrationProviders[] = ActionsServiceProvider::class;
+        }
+        if (class_exists(SchemasServiceProvider::class)) {
+            $integrationProviders[] = SchemasServiceProvider::class;
+        }
+        if (class_exists(NotificationsServiceProvider::class)) {
+            $integrationProviders[] = NotificationsServiceProvider::class;
+        }
+        if (class_exists(InfolistsServiceProvider::class)) {
+            $integrationProviders[] = InfolistsServiceProvider::class;
+        }
+        if (class_exists(TablesServiceProvider::class)) {
+            $integrationProviders[] = TablesServiceProvider::class;
+        }
+        if (class_exists(WidgetsServiceProvider::class)) {
+            $integrationProviders[] = WidgetsServiceProvider::class;
+        }
+        if (class_exists(FormsServiceProvider::class)) {
+            $integrationProviders[] = FormsServiceProvider::class;
+        }
+        if (class_exists(FilamentServiceProvider::class)) {
+            $integrationProviders[] = FilamentServiceProvider::class;
+        }
+        if (class_exists(LivewireServiceProvider::class)) {
+            $integrationProviders[] = LivewireServiceProvider::class;
+        }
+
+        return array_merge($integrationProviders, $providers);
     }
 
     public function defineEnvironment($app): void

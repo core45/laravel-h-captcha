@@ -11,8 +11,11 @@ namespace Core45\HCaptcha\Support;
  * the protected operation when the framework can tell us: for Livewire that is
  * the executing component, so two components validating the same attribute in
  * one batched request do not share a verdict. `sitekey` is the key the widget
- * was rendered with, when it differs from the configured one; it is server
- * code that supplies it, never request input.
+ * was rendered with, when it differs from the configured one. `profile` names
+ * a configured credential pair under `hcaptcha.profiles`, which supplies both
+ * the expected sitekey and the secret the token is checked against. Both are
+ * supplied by server code, never by request input: a visitor who can pick the
+ * credentials can pick which secret vouches for their token.
  *
  * The memo in HttpVerifier is keyed on scope(). Two checks with the same scope
  * in one request cost one HTTP call, which is what lets the middleware and the
@@ -25,6 +28,7 @@ final readonly class VerificationContext
         public ?string $field = null,
         public ?string $action = null,
         public ?string $sitekey = null,
+        public ?string $profile = null,
     ) {}
 
     public static function forField(string $field): self
@@ -61,5 +65,17 @@ final readonly class VerificationContext
         }
 
         return ($action ?? '').'|'.($field ?? '');
+    }
+
+    /**
+     * The credential half of the memo key.
+     *
+     * A verdict obtained for one sitekey or profile must never vouch for
+     * another, so the key the token was checked against is part of what
+     * identifies a memoized verdict.
+     */
+    public function credentialKey(): string
+    {
+        return ($this->profile ?? '').'|'.($this->sitekey ?? '');
     }
 }

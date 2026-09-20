@@ -48,12 +48,17 @@ class HCaptcha implements ValidationRule
      *                                when it is not the configured one. Server
      *                                code supplies this; never request input.
      * @param  string|null  $action  Overrides the derived action identity.
+     * @param  string|null  $profile  Named credential profile from
+     *                                `hcaptcha.profiles`, when the widget was
+     *                                rendered with one. Server code supplies
+     *                                this too; never request input.
      */
     public function __construct(
         protected ?Verifier $verifier = null,
         protected ?string $clientIp = null,
         protected ?string $sitekey = null,
         protected ?string $action = null,
+        protected ?string $profile = null,
     ) {}
 
     /**
@@ -101,6 +106,7 @@ class HCaptcha implements ValidationRule
             field: $attribute,
             action: $this->action ?? LivewireContext::action(),
             sitekey: $this->sitekey,
+            profile: $this->profile,
         );
     }
 

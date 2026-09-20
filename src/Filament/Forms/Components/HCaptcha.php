@@ -30,6 +30,8 @@ class HCaptcha extends Field
 
     protected string|Closure|null $sitekey = null;
 
+    protected string|Closure|null $profile = null;
+
     public static function make(?string $name = null): static
     {
         $name ??= config('hcaptcha.field', 'h-captcha-response');
@@ -44,7 +46,10 @@ class HCaptcha extends Field
         // A closure, so the rule sees the sitekey set after make(). The
         // sitekey the widget renders with and the one verification expects
         // must be the same key, or hCaptcha answers sitekey-secret-mismatch.
-        $this->rule(fn (): HCaptchaRule => new HCaptchaRule(sitekey: $this->evaluate($this->sitekey)));
+        $this->rule(fn (): HCaptchaRule => new HCaptchaRule(
+            sitekey: $this->evaluate($this->sitekey),
+            profile: $this->getProfile(),
+        ));
 
         // The rule itself is implicit (see Rules\HCaptcha), so it already
         // fires and reports hcaptcha::hcaptcha.missing on an empty or absent
@@ -96,6 +101,19 @@ class HCaptcha extends Field
         return $this;
     }
 
+    /**
+     * Render and verify with a named credential profile from
+     * `hcaptcha.profiles`. The rule this field registers carries the same
+     * profile, so the key the widget renders with and the secret the token is
+     * checked against always belong to the same pair.
+     */
+    public function profile(string|Closure|null $profile): static
+    {
+        $this->profile = $profile;
+
+        return $this;
+    }
+
     public function getTheme(): ?string
     {
         return $this->evaluate($this->theme);
@@ -111,9 +129,23 @@ class HCaptcha extends Field
         return $this->manager()->locale($this->evaluate($this->locale));
     }
 
+    public function getProfile(): ?string
+    {
+        return $this->evaluate($this->profile);
+    }
+
     public function getSitekey(): string
     {
-        return $this->manager()->sitekey($this->evaluate($this->sitekey));
+        return $this->manager()->sitekey($this->resolvedSitekey());
+    }
+
+    /**
+     * The key this field renders with: an explicit sitekey wins, otherwise the
+     * profile's, otherwise the global one.
+     */
+    protected function resolvedSitekey(): ?string
+    {
+        return $this->evaluate($this->sitekey) ?? $this->manager()->profileSitekey($this->getProfile());
     }
 
     /**
@@ -138,7 +170,7 @@ class HCaptcha extends Field
                 ],
                 static fn (mixed $value): bool => $value !== null,
             ),
-            $this->evaluate($this->sitekey),
+            $this->resolvedSitekey(),
         );
     }
 
@@ -173,13 +205,22 @@ class HCaptcha extends Field
     }
 
     /**
+     * Whether `HCaptcha::fake()` is bound, in which case the view renders a
+     * widget a test can solve instead of loading hCaptcha's SDK.
+     */
+    public function isFaking(): bool
+    {
+        return $this->manager()->faking();
+    }
+
+    /**
      * Whether a usable sitekey resolves for this field. When it does not the
      * view renders no widget -- the same policy as the Blade component -- but
      * the field stays in validation, so the form still fails closed.
      */
     public function isConfigured(): bool
     {
-        return $this->manager()->configured($this->evaluate($this->sitekey));
+        return $this->manager()->configured($this->resolvedSitekey());
     }
 
     /**

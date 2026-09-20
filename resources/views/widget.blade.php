@@ -1,4 +1,15 @@
-@if (! $available)
+@if ($faking())
+    {{-- HCaptcha::fake() is bound, so render something a test can solve
+         instead of hCaptcha's SDK. Checked before $available: a test fakes the
+         verifier precisely so it does not need real credentials. --}}
+    @include('hcaptcha::fake', [
+        'widgetId' => $widgetId,
+        'fieldName' => $fieldName(),
+        'stateField' => $model ?? $fieldName(),
+        'wireModel' => $model,
+        'fakeToken' => \Core45\HCaptcha\Testing\FakeVerifier::TOKEN,
+    ])
+@elseif (! $available)
     {{-- No site key configured. Render nothing rather than throwing: a missing
          key is a deployment problem, not a reason to take the page down. The
          verifier still fails closed, so the form cannot be submitted past it. --}}

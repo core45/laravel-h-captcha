@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace Core45\HCaptcha\Support;
 
 use Core45\HCaptcha\Contracts\Verifier;
+use Core45\HCaptcha\Events\VerificationCompleted;
 use Core45\HCaptcha\Exceptions\MissingSecretException;
 use Core45\HCaptcha\HCaptchaManager;
 use Illuminate\Contracts\Config\Repository;
+use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Http\Client\Factory as HttpFactory;
 use Psr\Log\LoggerInterface;
 use Throwable;
@@ -38,12 +40,17 @@ final class HttpVerifier implements Verifier
      */
     private static bool $hostnameCheckInactiveLogged = false;
 
+    private readonly Credentials $credentials;
+
     public function __construct(
         private readonly HttpFactory $http,
         private readonly Repository $config,
         private readonly LoggerInterface $logger,
         private readonly VerificationLogger $audit,
-    ) {}
+        private readonly Dispatcher $events,
+    ) {
+        $this->credentials = new Credentials($config);
+    }
 
     /**
      * Reset the once-per-process log latches. For tests.
@@ -95,12 +102,13 @@ final class HttpVerifier implements Verifier
         // unscoped caller instead pays a real request and hCaptcha answers
         // `already-seen-response` on the second attempt -- which is correct
         // for a single-use token. The expected sitekey is part of the key too:
-        // a verdict obtained for one key must not vouch for another.
+        // a verdict obtained for one key -- or one credential profile -- must
+        // not vouch for another.
         $scopeKey = $context->scope();
 
         $key = $scopeKey === null
             ? null
-            : $tokenHash.'|'.$scopeKey.'|'.($context->sitekey ?? '');
+            : $tokenHash.'|'.$scopeKey.'|'.$context->credentialKey();
 
         if ($key !== null && array_key_exists($key, $this->memo)) {
             return $this->memo[$key];
@@ -112,6 +120,12 @@ final class HttpVerifier implements Verifier
         // concern; mixing it in would break replay correlation across scopes.
         $this->audit->record($result, $tokenHash, $clientIp);
         $this->report($result);
+
+        // After the audit row, so a listener that queries the trail sees its
+        // own verification in it. Dispatched here rather than in verify()'s
+        // memo branch: one token checked by both the middleware and the rule
+        // is one verification, and firing twice would over-report.
+        $this->events->dispatch(new VerificationCompleted($result, $context, $tokenHash));
 
         if ($key === null) {
             return $result;
@@ -138,7 +152,11 @@ final class HttpVerifier implements Verifier
      */
     private function call(string $token, ?string $clientIp, VerificationContext $context): VerificationResult
     {
-        $secret = $this->config->get('hcaptcha.secret');
+        // A named profile supplies both halves of the credential pair, falling
+        // back to the global ones for whichever half it leaves unset.
+        $credentials = $this->credentials->for($context->profile);
+
+        $secret = $credentials['secret'];
 
         // Rejects thinhbuzz/laravel-h-captcha's 'default_secret' placeholder as
         // well as an unset value. Accepting it would fail every verification
@@ -160,7 +178,7 @@ final class HttpVerifier implements Verifier
         // The context's sitekey wins: it is the key the widget was rendered
         // with, supplied by server code. hCaptcha answers
         // `sitekey-secret-mismatch` if the token was minted for another key.
-        $sitekey = $context->sitekey !== null && $context->sitekey !== '' ? $context->sitekey : $this->config->get('hcaptcha.sitekey');
+        $sitekey = $context->sitekey !== null && $context->sitekey !== '' ? $context->sitekey : $credentials['sitekey'];
 
         if ($this->config->get('hcaptcha.send_sitekey', true) && is_string($sitekey) && $sitekey !== '') {
             $body['sitekey'] = $sitekey;

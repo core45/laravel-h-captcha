@@ -67,7 +67,22 @@
     "scripts": {
         "lint": "pint",
         "stan": "phpstan analyse",
-        "test": "pest"
+        "test": "pest",
+        "test:core": "pest --testsuite=Unit,Feature,Octane",
+        "test:integration": "pest --testsuite=Integration",
+        "test:browser": "pest --testsuite=Browser",
+        "ci": [
+            "@composer validate --strict",
+            "@lint --test",
+            "@stan",
+            "@test"
+        ]
+    },
+    "scripts-descriptions": {
+        "test:core": "The suites that must pass without Livewire or Filament installed.",
+        "test:integration": "The suites that need Livewire and Filament.",
+        "test:browser": "The Chromium suite. Run `npm ci && npx playwright install chromium` first.",
+        "ci": "Everything CI runs, except the browser suite."
     },
     "config": {
         "sort-packages": true,

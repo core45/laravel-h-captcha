@@ -2,7 +2,18 @@
     :component="$getFieldWrapperView()"
     :field="$field"
 >
-    @if (! $isConfigured())
+    @if ($isFaking())
+        {{-- HCaptcha::fake() is bound: render a widget a test can solve rather
+             than hCaptcha's SDK. Checked before the sitekey, because a test
+             fakes the verifier precisely so it needs no real credentials. --}}
+        @include('hcaptcha::fake', [
+            'widgetId' => $getWidgetId(),
+            'fieldName' => null,
+            'stateField' => $getStatePath(),
+            'wireModel' => $getStatePath(),
+            'fakeToken' => \Core45\HCaptcha\Testing\FakeVerifier::TOKEN,
+        ])
+    @elseif (! $isConfigured())
         {{-- No site key. Render nothing rather than throwing; the rule still
              rejects the submission, so nothing gets past the field. --}}
         @php($logMisconfigured())

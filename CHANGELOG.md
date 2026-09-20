@@ -4,7 +4,7 @@ All notable changes to `core45/laravel-h-captcha` are documented in this file, i
 [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
-## 2.0.0 - Unreleased
+## 2.0.0 - 2026-09-20
 
 ### Changed
 
@@ -21,6 +21,7 @@ All notable changes to `core45/laravel-h-captcha` are documented in this file, i
 - Widget ids are deterministic per Livewire component instance or page, fixing the token binding lost after a Livewire re-render and the Filament id collision between two forms with the same state path.
 - `Rules\HCaptcha` dispatches `core45HCaptcha:reset` with the validated field after any token is verified inside a Livewire component; manual reset calls are no longer needed.
 - The Filament field renders no widget when no sitekey resolves but stays in validation.
+- **Behaviour change:** the package's audit migration no longer always loads. `hcaptcha.logging.migrations` (`HCAPTCHA_LOGGING_MIGRATIONS`) decides: `null` (default) follows `logging.enabled`, `true` always loads it, `false` never loads it from the package. An installation that already has the `hcaptcha_verifications` table without `logging.enabled` set should set this to `true`, or publish the migration with `--tag=hcaptcha-migrations` and own it outright.
 
 ### Added
 
@@ -36,6 +37,11 @@ All notable changes to `core45/laravel-h-captcha` are documented in this file, i
 - Translation keys `widget_error` and `widget_pending` in all locales.
 - `resources/js/fake-api.js`, a network-free stand-in for `api.js` used by the package's Playwright suite. A consuming application can point `hcaptcha.script.url` at it (served from a route of their own) to drive browser tests without a live hCaptcha account; a first-class helper for wiring this up in consuming apps is under consideration.
 - Response inputs carry `data-hcaptcha-field`.
+- Named credential profiles: `hcaptcha.profiles` config key, `Core45\HCaptcha\Support\Credentials`, and `HCaptchaManager::profileCredentials()`, `profileSitekey()`, `profileNames()`. Selected via the Blade component's `profile` prop, the Filament field's `->profile()`, `Rules\HCaptcha`'s `profile:` constructor argument, and the middleware's third parameter. `VerificationContext` carries `profile` and it is part of the memo key via `credentialKey()`. Server code only — never request input. An unknown profile throws `InvalidArgumentException`.
+- `Core45\HCaptcha\Events\VerificationCompleted`, dispatched by `HttpVerifier` once per verification that reaches hCaptcha (not for a memoized repeat, a missing token, or an oversized token), carrying `result`, `context`, a SHA-256 `tokenHash` (never the raw token) and `passed()`.
+- `HCaptcha::fake(bool $passes = true): FakeVerifier` and `Core45\HCaptcha\Testing\FakeVerifier`, a network-free `Verifier` for application tests, with `pass()`, `fail()`, `respondWith()`, `verifications()` and `assertVerified*()` assertions. While bound, every widget renders `resources/views/fake.blade.php` — a hidden input pre-filled with `FakeVerifier::TOKEN` and a `[data-fake-hcaptcha-checkbox]` button — instead of hCaptcha's real widget.
+- `hcaptcha.logging.migrations` config key (`HCAPTCHA_LOGGING_MIGRATIONS`), controlling whether `HCaptchaServiceProvider` loads the audit migration; see the behaviour-change note above.
+- `php artisan hcaptcha:doctor`, a diagnostic command reporting credential, profile, hostname and audit-trail configuration problems without a network call or printing the secret. Exits `SUCCESS`/`FAILURE`.
 
 ### Removed
 

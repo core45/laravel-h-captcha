@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Core45\HCaptcha;
 
 use Core45\HCaptcha\Compat\CaptchaCompat;
+use Core45\HCaptcha\Console\DoctorCommand;
 use Core45\HCaptcha\Console\PruneVerificationsCommand;
 use Core45\HCaptcha\Contracts\Verifier;
 use Core45\HCaptcha\Http\Middleware\VerifyHCaptcha;
@@ -199,13 +200,41 @@ class HCaptchaServiceProvider extends ServiceProvider
 
     protected function bootCommands(): void
     {
-        if ($this->app->runningInConsole()) {
-            $this->commands([
-                PruneVerificationsCommand::class,
-            ]);
+        if (! $this->app->runningInConsole()) {
+            return;
+        }
 
+        $this->commands([
+            PruneVerificationsCommand::class,
+            DoctorCommand::class,
+        ]);
+
+        if ($this->shouldLoadMigrations()) {
             $this->loadMigrationsFrom(__DIR__.'/../database/migrations');
         }
+    }
+
+    /**
+     * Whether to run the audit migration from inside the package.
+     *
+     * The audit trail is optional, so installing the package should not add a
+     * table to an application that never asked for one. `logging.migrations`
+     * decides, and unset follows `logging.enabled`: switch the audit trail on
+     * and the table appears on the next `migrate`; leave it off and nothing is
+     * created. An installation that already has the table keeps it either way
+     * -- nothing here drops anything -- and can set `logging.migrations` to
+     * true so `migrate:status` still recognises the migration, or publish it
+     * with `--tag=hcaptcha-migrations` and own it outright.
+     */
+    protected function shouldLoadMigrations(): bool
+    {
+        $configured = $this->app['config']->get('hcaptcha.logging.migrations');
+
+        if ($configured === null) {
+            return (bool) $this->app['config']->get('hcaptcha.logging.enabled', false);
+        }
+
+        return (bool) $configured;
     }
 
     /**

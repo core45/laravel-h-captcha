@@ -6,5 +6,8 @@
 composer.lock
 .DS_Store
 .idea
+/docs/package-review-and-plan.md
+/docs/competitor-research.md
+/docs/superpowers
 /node_modules
 /tests/Browser/Screenshots

@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/core45/laravel-h-captcha/security/advisories/new
+    about: Please report vulnerabilities privately instead of opening a public issue. See SECURITY.md.
+  - name: hCaptcha service / dashboard issue
+    url: https://docs.hcaptcha.com/
+    about: Issues with hCaptcha's own service, API, or dashboard are out of this package's scope — see hCaptcha's own docs/support.

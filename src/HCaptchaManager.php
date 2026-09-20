@@ -7,9 +7,11 @@ namespace Core45\HCaptcha;
 use Closure;
 use Core45\HCaptcha\Contracts\Verifier;
 use Core45\HCaptcha\Exceptions\MissingSitekeyException;
+use Core45\HCaptcha\Support\Credentials;
 use Core45\HCaptcha\Support\LivewireContext;
 use Core45\HCaptcha\Support\VerificationContext;
 use Core45\HCaptcha\Support\VerificationResult;
+use Core45\HCaptcha\Testing\FakeVerifier;
 use Illuminate\Contracts\Config\Repository;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Support\Facades\Vite;
@@ -78,6 +80,13 @@ class HCaptchaManager
     private static bool $misconfiguredLogged = false;
 
     /**
+     * Resolver for the named credential profiles. Built lazily rather than
+     * injected: the verifier needs the same resolver, and the manager already
+     * depends on the verifier.
+     */
+    protected ?Credentials $credentials = null;
+
+    /**
      * Whether a configured value is a real credential, rather than unset or one
      * of the placeholders above.
      */
@@ -115,6 +124,17 @@ class HCaptchaManager
         return $this->verifier->verify($token, $clientIp, $scope ?? VerificationContext::forField($this->fieldName()));
     }
 
+    /**
+     * Whether `HCaptcha::fake()` is in force. The views ask, so that a test
+     * renders a widget it can solve without loading hCaptcha's SDK or opening
+     * a socket. Nothing in the request path branches on this -- a fake
+     * verifier can only be installed by test code.
+     */
+    public function faking(): bool
+    {
+        return $this->verifier instanceof FakeVerifier;
+    }
+
     public function sitekey(?string $override = null): string
     {
         $sitekey = $override ?? $this->config->get('hcaptcha.sitekey');
@@ -125,6 +145,44 @@ class HCaptchaManager
 
         /** @var string $sitekey */
         return trim($sitekey);
+    }
+
+    /**
+     * The credentials a named profile resolves to.
+     *
+     * @return array{sitekey: mixed, secret: mixed}
+     *
+     * @throws InvalidArgumentException when the profile is unknown.
+     */
+    public function profileCredentials(?string $profile): array
+    {
+        return $this->credentials()->for($profile);
+    }
+
+    /**
+     * The sitekey a named profile renders with, or null when it resolves to
+     * nothing usable -- so a view can degrade rather than throw.
+     *
+     * @throws InvalidArgumentException when the profile is unknown.
+     */
+    public function profileSitekey(?string $profile): ?string
+    {
+        return $this->credentials()->sitekeyFor($profile);
+    }
+
+    /**
+     * Names of the configured credential profiles.
+     *
+     * @return list<string>
+     */
+    public function profileNames(): array
+    {
+        return $this->credentials()->names();
+    }
+
+    protected function credentials(): Credentials
+    {
+        return $this->credentials ??= new Credentials($this->config);
     }
 
     /**

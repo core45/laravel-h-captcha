@@ -1,0 +1,78 @@
+name: Bug report
+description: Something in laravel-h-captcha isn't behaving as documented.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug. Please **do not** use this form for
+        security vulnerabilities — see [SECURITY.md](../../SECURITY.md) instead.
+
+  - type: input
+    id: package-version
+    attributes:
+      label: Package version
+      description: The `core45/laravel-h-captcha` version (or commit) you're on.
+      placeholder: "2.0.0 / dev-main@abc1234"
+    validations:
+      required: true
+
+  - type: input
+    id: versions
+    attributes:
+      label: Laravel / Livewire / Filament versions
+      description: List the Laravel version and, if relevant, the Livewire and/or Filament versions.
+      placeholder: "Laravel 13.32.0, Livewire 4.4.5, Filament 5.8.2"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Where does the failure happen?
+      multiple: true
+      options:
+        - Plain Blade form
+        - Livewire component
+        - Filament form field
+        - Validation rule directly
+        - Route middleware
+        - Audit trail / hcaptcha:prune command
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: config
+    attributes:
+      label: Relevant configuration
+      description: >
+        Paste the relevant parts of your `config/hcaptcha.php` (or the env vars you set).
+        **Redact your `secret` and `sitekey` values** before pasting.
+      render: php
+    validations:
+      required: true
+
+  - type: textarea
+    id: error-codes
+    attributes:
+      label: VerificationResult error codes
+      description: >
+        If applicable, the `error_codes` / `rejectedBy` values from the `VerificationResult`
+        (e.g. from `toArray()`, a logged audit row, or a dumped result).
+      render: text
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: A minimal, concrete sequence of steps (or a minimal test case) that reproduces the issue.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected vs actual behaviour
+    validations:
+      required: true

@@ -41,6 +41,34 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Named credential profiles
+    |--------------------------------------------------------------------------
+    |
+    | One application can serve several sites, each with its own hCaptcha
+    | sitekey and secret. A profile names such a pair, so the widget and the
+    | verification agree on which key is in play instead of a request mutating
+    | the global configuration between render and verify.
+    |
+    | Server code selects the profile -- the Blade component's `profile` prop,
+    | the Filament field's `->profile()`, the rule's `profile:` argument, the
+    | middleware's third parameter. Never take the name from request input: a
+    | visitor who can choose the profile can choose which secret vouches for
+    | their token.
+    |
+    | A profile falls back to the global sitekey/secret for whichever of the
+    | two it leaves unset, so a profile may override only the sitekey.
+    |
+    */
+
+    'profiles' => [
+        // 'marketing' => [
+        //     'sitekey' => env('HCAPTCHA_MARKETING_SITEKEY'),
+        //     'secret' => env('HCAPTCHA_MARKETING_SECRET'),
+        // ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Verification endpoint
     |--------------------------------------------------------------------------
     */
@@ -193,6 +221,17 @@ return [
         // Rows older than this are removed by hcaptcha:prune. 0 disables
         // pruning and keeps every row.
         'retention_days' => (int) env('HCAPTCHA_RETENTION_DAYS', 90),
+
+        // Whether the package's audit migration runs from inside the package.
+        //
+        // null follows `enabled`, so installing the package creates no table
+        // until the audit trail is switched on. true always loads it -- which
+        // is what an installation that already has the table wants, so that
+        // `migrate:status` keeps recognising it. false never loads it: publish
+        // the migration with `--tag=hcaptcha-migrations` and own it instead.
+        'migrations' => env('HCAPTCHA_LOGGING_MIGRATIONS') !== null
+            ? filter_var(env('HCAPTCHA_LOGGING_MIGRATIONS'), FILTER_VALIDATE_BOOL)
+            : null,
     ],
 
 ];

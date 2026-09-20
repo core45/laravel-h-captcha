@@ -18,9 +18,14 @@ use Symfony\Component\HttpFoundation\Response;
  *
  *     Route::post('/contact', ContactController::class)->middleware('hcaptcha');
  *     Route::post('/contact', ContactController::class)->middleware('hcaptcha:h-captcha-response,20000000-ffff-ffff-ffff-000000000002');
+ *     Route::post('/signup', SignupController::class)->middleware('hcaptcha:h-captcha-response,,marketing');
  *
  * The second parameter is the sitekey the widget was rendered with, needed
- * only when it differs from the configured one.
+ * only when it differs from the configured one. The third names a credential
+ * profile from `hcaptcha.profiles`, which supplies both the expected sitekey
+ * and the secret -- the widget must have been rendered with the same profile.
+ * Both come from the route definition, which is server code, never from the
+ * request.
  *
  * A rejection throws ValidationException, so the failure arrives as a 422 with
  * a message bag rather than a 500 -- and as a redirect-with-errors for a
@@ -53,7 +58,7 @@ class VerifyHCaptcha
     /**
      * @param  Closure(Request): Response  $next
      */
-    public function handle(Request $request, Closure $next, ?string $field = null, ?string $sitekey = null): Response
+    public function handle(Request $request, Closure $next, ?string $field = null, ?string $sitekey = null, ?string $profile = null): Response
     {
         $field ??= $this->fieldName();
 
@@ -65,7 +70,11 @@ class VerifyHCaptcha
         $result = $this->verifier->verify(
             is_string($token) ? $token : null,
             $request->ip(),
-            new VerificationContext(field: $field, sitekey: $sitekey !== null && $sitekey !== '' ? $sitekey : null),
+            new VerificationContext(
+                field: $field,
+                sitekey: $sitekey !== null && $sitekey !== '' ? $sitekey : null,
+                profile: $profile !== null && $profile !== '' ? $profile : null,
+            ),
         );
 
         if ($result->failed()) {

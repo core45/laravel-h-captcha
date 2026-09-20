@@ -3,12 +3,14 @@
 declare(strict_types=1);
 
 use Core45\HCaptcha\Tests\BrowserTestCase;
+use Core45\HCaptcha\Tests\IntegrationTestCase;
 use Core45\HCaptcha\Tests\TestCase;
 use Illuminate\Support\Facades\Http;
 use Pest\Browser\Api\AwaitableWebpage;
 use Pest\Browser\Api\Webpage;
 
-uses(TestCase::class)->in('Unit', 'Feature');
+uses(TestCase::class)->in('Unit', 'Feature', 'Octane');
+uses(IntegrationTestCase::class)->in('Integration');
 uses(BrowserTestCase::class)->in('Browser');
 
 /**

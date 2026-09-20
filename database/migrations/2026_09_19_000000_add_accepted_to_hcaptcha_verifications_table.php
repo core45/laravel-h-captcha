@@ -27,7 +27,17 @@ return new class extends Migration
 
     public function down(): void
     {
-        Schema::connection($this->connection())->table($this->table(), function (Blueprint $table): void {
+        // The table name is re-resolved from config, same as in up(). If an
+        // operator or test renames the table between the two runs, this
+        // migration never touched the table under today's name — dropping
+        // its index/column would fail instead of no-op.
+        $connection = Schema::connection($this->connection());
+
+        if (! $connection->hasTable($this->table()) || ! $connection->hasColumn($this->table(), 'accepted')) {
+            return;
+        }
+
+        $connection->table($this->table(), function (Blueprint $table): void {
             $table->dropIndex([$this->indexName()]);
             $table->dropColumn('accepted');
         });

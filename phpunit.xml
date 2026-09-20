@@ -12,6 +12,12 @@
         <testsuite name="Feature">
             <directory>tests/Feature</directory>
         </testsuite>
+        <testsuite name="Integration">
+            <directory>tests/Integration</directory>
+        </testsuite>
+        <testsuite name="Octane">
+            <directory>tests/Octane</directory>
+        </testsuite>
         <testsuite name="Browser">
             <directory>tests/Browser</directory>
         </testsuite>

@@ -21,10 +21,20 @@ That is a working, spam-protected form. Everything else is optional.
 - **Safe to stack.** hCaptcha tokens are single-use, so guarding one form with both the rule and the middleware would normally spend the token twice and show the visitor a failure they did nothing to cause. Here the verdict is remembered per field, so the token is spent once no matter how many guards check it.
 - **Secure by default rather than by configuration.** It fails closed during an outage, rejects tokens solved on someone else's site, refuses a malformed response, and never stores a raw token.
 - **No Guzzle pin.** It uses Laravel's own `Http` client, so it never argues with your other dependencies about a Guzzle major version.
-- **Drop-in for `thinhbuzz/laravel-h-captcha`.** Same `.env` keys, same `Captcha` facade, same `captcha` rule — swap the package and keep your code. See [Migrating](#migrating-from-thinhbuzzlaravel-h-captcha).
+- **Drop-in for `thinhbuzz/laravel-h-captcha`.** Same `.env` keys, same `Captcha` facade, same `captcha` rule — swap the package and keep your code. See [Migrating](docs/migrating-from-thinhbuzz.md).
 - **22 languages**, a typed result object for when you want to know *why* a token failed, and an optional audit trail with a retention command.
 
 Requires PHP 8.4 and Laravel 12 or 13.
+
+## Documentation
+
+- [Migrating from thinhbuzz/laravel-h-captcha](docs/migrating-from-thinhbuzz.md) — drop-in replacement notes for `buzz/laravel-h-captcha` users.
+- [Upgrading from 1.x](docs/upgrading.md) — behaviour changes when moving a 1.x install to 2.0.0.
+- [Content Security Policy](docs/content-security-policy.md) — required directives, nonces, and the Livewire `'unsafe-eval'` caveat.
+- [Translations](docs/translations.md) — the 22 shipped locales and their keys.
+- [Audit trail](docs/audit-trail.md) — what gets logged, PII toggles, pruning, and migration registration.
+- [Support policy](docs/support-policy.md) — supported versions, semantic versioning scope, and deprecation approach.
+- [Security policy](SECURITY.md) — how to report a vulnerability and what's in scope.
 
 ## Installation
 
@@ -41,7 +51,7 @@ php artisan vendor:publish --tag=hcaptcha-views        # resources/views/vendor/
 php artisan vendor:publish --tag=hcaptcha-migrations   # database/migrations/*_create_hcaptcha_verifications_table.php
 ```
 
-Only run `php artisan migrate` if you intend to turn on the audit trail (`hcaptcha.logging.enabled`). Nothing else in the package needs a database table — verification talks to hCaptcha over HTTP and returns a value object.
+Only run `php artisan migrate` if you intend to turn on the audit trail (`hcaptcha.logging.enabled`). Nothing else in the package needs a database table — verification talks to hCaptcha over HTTP and returns a value object. The package's own audit migration is not even registered unless `hcaptcha.logging.enabled` or `hcaptcha.logging.migrations` is on — see [Audit migrations](docs/audit-trail.md#audit-migrations).
 
 ## Getting your hCaptcha keys
 
@@ -97,41 +107,7 @@ The token it produces is `10000000-aaaa-bbbb-cccc-000000000001`. These accept ev
 
 ## Migrating from thinhbuzz/laravel-h-captcha
 
-```bash
-composer remove buzz/laravel-h-captcha
-composer require core45/laravel-h-captcha
-```
-
-No application code needs to change. The `Captcha` facade, the `captcha` validation rule, and your existing `.env` keys all keep working.
-
-**What keeps working unchanged:**
-
-- The env keys `CAPTCHA_SECRET` and `CAPTCHA_SITEKEY`. If both `CAPTCHA_*` and `HCAPTCHA_*` are set, `HCAPTCHA_*` wins, so a half-migrated `.env` behaves predictably rather than randomly.
-- A previously published `config/captcha.php` — its `secret`, `sitekey`, `options.lang`, and `attributes` values are adopted for any `hcaptcha.*` key that is not itself set. A configured `hcaptcha.*` value always wins over the legacy config.
-- The `Captcha` facade, with all eight methods from the old package: `display()`, `displayMultiple()`, `displayJs()`, `multiple()`, `setOptions()`, `verify()`, `getWidgetIdName()`, `getJsVariableName()`.
-- `Captcha::verify($response, $clientIp = null, $options = [])` returns a plain **bool**, exactly like before. To see *why* a token failed, call the native `HCaptcha::verify()` instead, which returns a `VerificationResult`.
-- The `captcha` string validation rule (`'h-captcha-response' => 'captcha'`).
-- The `Form::captcha()` macro, registered only when a `form` binding exists in the container.
-
-**What is different, and why:**
-
-- `http_client` in the old config is **ignored**. It named a Guzzle-based HTTP client class, and replacing Guzzle with Laravel's own `Http` client is the entire reason this package exists — see [Why this exists](#why-this-exists). A configured `http_client` logs a warning and is otherwise skipped.
-- The old package's config defaults — the literal strings `default_sitekey` and `default_secret` — are treated as **not configured**, and raise `MissingSitekeyException` / `MissingSecretException` instead of being sent to hCaptcha. This is deliberate: those literals meant every verification silently failed with no indication why, which is exactly the failure mode this package is built to avoid.
-- `multiple` mode needs no special handling. Every widget already renders in explicit mode and the bootstrap script renders every container on the page, so several widgets already work side by side. `displayMultiple()` still exists so old calls do not break, but it returns an empty string.
-- `verify()` no longer swallows every failure into a bare `false` with no explanation. The native layer distinguishes missing, expired, unavailable, and failed tokens, and fails **closed** on a transport error unless you opt into `HCAPTCHA_FAIL_OPEN=true`.
-
-### The hostname check — the most likely migration surprise
-
-`hostnames` is **on by default** in this package, derived from `APP_URL`. If your form is served from a different host than `APP_URL` (a staging domain, a second brand, a proxy), set `HCAPTCHA_HOSTNAMES` to a comma-separated list of the hostnames that should be accepted — otherwise genuine submissions get rejected with `hostname-mismatch`. See [Your sitekey is public](#your-sitekey-is-public--this-is-why-hostnames-matters) for why this check exists at all. A hostname hCaptcha reports as missing or `not-provided` passes with a warning unless `HCAPTCHA_HOSTNAMES_STRICT` is set. An install that relied on 1.x rejecting an unreported hostname should set `HCAPTCHA_HOSTNAMES_STRICT=true`; either way, the authoritative origin control is the domain allowlist on the sitekey in the hCaptcha dashboard, not this check.
-
-### Recommended follow-up
-
-Once the swap is verified, consider:
-
-- Switching to `<x-hcaptcha />` and the `HCaptcha` rule object for better per-outcome error messages.
-- Moving `.env` keys from `CAPTCHA_*` to `HCAPTCHA_*`.
-- Deleting `config/captcha.php` once nothing reads it.
-- Adding `throttle` to the route the captcha guards — see [Rate limiting](#rate-limiting).
+Swap `buzz/laravel-h-captcha` for this package and keep your code — the `Captcha` facade, the `captcha` rule, and your `.env` keys all keep working. See [Migrating from thinhbuzz/laravel-h-captcha](docs/migrating-from-thinhbuzz.md) for what changes and the one hostname-check surprise to watch for.
 
 ## Configuration
 
@@ -141,6 +117,7 @@ Every key in `config/hcaptcha.php`:
 | --- | --- | --- |
 | `sitekey` | `HCAPTCHA_SITEKEY` | `null` |
 | `secret` | `HCAPTCHA_SECRET` | `null` |
+| `profiles` | — | `[]` |
 | `endpoint` | `HCAPTCHA_ENDPOINT` | `https://api.hcaptcha.com/siteverify` |
 | `timeout` | `HCAPTCHA_TIMEOUT` | `10` |
 | `retries` | `HCAPTCHA_RETRIES` | `0` |
@@ -164,6 +141,7 @@ Every key in `config/hcaptcha.php`:
 | `logging.log_missing_token` | `HCAPTCHA_LOG_MISSING_TOKEN` | `false` |
 | `logging.log_oversized_token` | `HCAPTCHA_LOG_OVERSIZED_TOKEN` | `false` |
 | `logging.retention_days` | `HCAPTCHA_RETENTION_DAYS` | `90` |
+| `logging.migrations` | `HCAPTCHA_LOGGING_MIGRATIONS` | `null` (follows `logging.enabled`) |
 
 `sitekey` and `secret` both default to `null` on purpose: a missing secret throws (`MissingSecretException`) rather than silently rejecting every visitor, and a missing sitekey throws when a widget or field asks for one (`MissingSitekeyException`), or degrades to rendering nothing when the caller checks `HCaptcha::configured()` first.
 
@@ -294,7 +272,7 @@ Route::post('/contact', ContactController::class)->middleware('hcaptcha');
 Route::post('/contact', ContactController::class)->middleware('hcaptcha:my-field');
 ```
 
-The middleware also accepts an optional second parameter, the sitekey the widget was rendered with (`hcaptcha:h-captcha-response,<sitekey>`), so it shares a verdict with a rule constructed with the same `sitekey:`.
+The middleware also accepts an optional second parameter, the sitekey the widget was rendered with (`hcaptcha:h-captcha-response,<sitekey>`), so it shares a verdict with a rule constructed with the same `sitekey:`. An optional third parameter names a [credential profile](#named-credential-profiles) (`hcaptcha:h-captcha-response,,marketing` — the empty slot is the sitekey, which the profile supplies). Both come from the route definition, which is server code; neither is ever read from the request.
 
 Registered under the alias `hcaptcha` (`Core45\HCaptcha\Http\Middleware\VerifyHCaptcha`). It reads the token from `config('hcaptcha.field')` unless a field name is passed as middleware parameter, **verifies every request it sees — it no longer skips `GET`/`HEAD`/`OPTIONS`** — and on failure throws `Illuminate\Validation\ValidationException` with the same translated message key the rule object would produce — a 422 with a message bag, or a redirect-with-errors for a normal form post, never a 500. Safe to stack with the validation rule or the Filament field: the verifier's per-request memoization means the token is still spent only once.
 
@@ -345,6 +323,69 @@ The field calls `->markAsRequired()` (an asterisk only — a UI cue) and carries
 
 When no usable sitekey resolves the field renders no widget (a debug-only notice, like the Blade component) but stays in validation, so the form still fails closed. Widget ids are scoped to the Livewire component, so two forms with the same state path on one page do not collide: the id is `hcaptcha-<livewire-id>-<dom-safe-state-path>`, e.g. `hcaptcha-<livewire-id>-data-h-captcha-response` for a field bound to `data.h-captcha-response`.
 
+## Named credential profiles
+
+One application can serve several sites, each with its own hCaptcha sitekey and secret. A named profile under `hcaptcha.profiles` holds such a pair, falling back to the global `sitekey`/`secret` for whichever half it leaves unset:
+
+```php
+// config/hcaptcha.php
+'profiles' => [
+    'marketing' => [
+        'sitekey' => env('HCAPTCHA_MARKETING_SITEKEY'),
+        'secret' => env('HCAPTCHA_MARKETING_SECRET'),
+    ],
+],
+```
+
+Select it wherever the widget renders and wherever the token is verified — the two must name the same profile, or verification checks the token against a secret it was never minted for:
+
+```blade
+<x-hcaptcha profile="marketing" />
+```
+
+```php
+HCaptcha::make()->profile('marketing'),                          // Filament
+new \Core45\HCaptcha\Rules\HCaptcha(profile: 'marketing'),        // validation rule
+```
+
+```php
+Route::post('/signup', SignupController::class)
+    ->middleware('hcaptcha:h-captcha-response,,marketing');       // note the empty sitekey slot
+```
+
+**The profile name must always come from server code, never from request input.** A visitor who could choose the profile could choose which secret vouches for their token — exactly what `HCaptchaManager::profileSitekey()`, `profileCredentials()` and `profileNames()` (also on the `HCaptcha` facade) are built to prevent by keeping the choice out of the request.
+
+The profile is part of the memo key (`VerificationContext::credentialKey()`), alongside field and action, so a verdict obtained for one profile can never vouch for another, and the middleware and rule can still share one HTTP call when both name the same profile.
+
+An unknown profile name throws `InvalidArgumentException`, both when the widget resolves a sitekey for it and when verification resolves credentials for it — a typo in a profile name is treated as a bug to surface, not as input to tolerate.
+
+## Verification events
+
+`Core45\HCaptcha\Events\VerificationCompleted` fires once per verification that actually reached hCaptcha — after the audit row, if the audit trail is enabled. It carries:
+
+| Property | Type | Meaning |
+| --- | --- | --- |
+| `result` | `VerificationResult` | The verdict |
+| `context` | `VerificationContext` | Field, action, sitekey and profile the token was checked against |
+| `tokenHash` | `string` | SHA-256 of the token. The raw token is never carried. |
+
+Plus `passed(): bool`, a shortcut for `$event->result->passed()`.
+
+```php
+use Core45\HCaptcha\Events\VerificationCompleted;
+use Illuminate\Support\Facades\Event;
+
+Event::listen(function (VerificationCompleted $event): void {
+    if ($event->result->isConfigurationError()) {
+        // alert — this is a deployment problem, not a visitor problem
+    }
+
+    Metrics::increment($event->passed() ? 'hcaptcha.passed' : 'hcaptcha.failed');
+});
+```
+
+It does **not** fire for a memoized repeat verdict — one solved token checked by both the middleware and the rule is one verification, and firing twice would over-report — nor for a submission carrying no token, nor for one over `max_token_length`: neither reaches hCaptcha, and both are free for an unauthenticated caller to trigger, which is what `logging.log_missing_token` and `logging.log_oversized_token` exist to opt into separately.
+
 ## Verifying by hand
 
 ```php
@@ -380,49 +421,11 @@ Error codes follow [hCaptcha's siteverify table](https://docs.hcaptcha.com/#site
 
 ## Upgrading from 1.x
 
-2.0.0 changes behaviour in nine places. Each is a correctness fix; the common case of one form guarded by the rule and/or the middleware needs no code change, but a Livewire component should delete its manual `core45HCaptcha:reset` dispatch and a Livewire route should drop the middleware.
-
-- **`VerificationResult::success` is now hCaptcha's verdict only.** Read `accepted` (or call `passed()`) for the final answer. In 1.x a local rejection overwrote `success` with `false`; now it leaves `success` as `true` and sets `accepted: false`. Anything that branched on `->success` should branch on `->passed()`.
-- **The audit table has a new `accepted` column.** Run `php artisan migrate`. If you published the migrations, publish again with `php artisan vendor:publish --tag=hcaptcha-migrations`. The `failed()` model scope now filters on `accepted`.
-- **Memoization is scoped to the executing Livewire component.** Two components validating the same property name in one batched request no longer share a verdict. The middleware and the rule on the same field in a plain form still collapse to one call. If you called `HCaptcha::verify($token, $ip, 'some-scope')` with your own scope string, that still works and now means "field".
-- **Stacking the middleware on a Livewire update route no longer shares a verdict with the rule.** The rule scopes by the executing component; the middleware cannot, so the second check is told `already-seen-response`. Guard a Livewire form with the rule alone, which was always the documented setup.
-- **Error codes are hCaptcha's.** `tokenAlreadyUsed()` now matches `already-seen-response`; `token-already-used` is kept as an alias. `expired-input-response` reports the expired message; `invalid-input-response` no longer does. `isConfigurationError()` recognises `sitekey-secret-mismatch`, `bad-request` and the dummy-passcode codes and no longer lists codes hCaptcha never returns.
-- **An install that relied on 1.x rejecting an unreported hostname should set `HCAPTCHA_HOSTNAMES_STRICT=true`.** A missing or `not-provided` hostname now passes with a warning by default; the authoritative origin control is the domain allowlist on the sitekey in the hCaptcha dashboard, not this check.
-- **Published views:** if you published `hcaptcha::script` or `hcaptcha::widget` in 1.x, re-publish them. The bootstrap now lives in `resources/js/bootstrap.js` and the widget view emits a status element and `data-hcaptcha-field`.
-- **Widget ids are deterministic** (`hcaptcha-page-N`, `hcaptcha-<livewire-id>-N`) instead of random; selectors that relied on the `hcaptcha-` prefix still match.
-- **`data-hcaptcha-model` is no longer emitted.**
-
-Two defaults changed without changing behaviour: `retries` now counts *additional* attempts and defaults to `0` (1.x's default of `1` also made one attempt), and the "hostname check inactive" error is logged once per process rather than once per verification. New opt-ins: `hostnames_strict` and `logging.log_oversized_token`, both `false`.
+2.0.0 changes behaviour in ten places — mostly correctness fixes around `VerificationResult::success` vs `accepted`, memoization scoping, and error codes. See [Upgrading from 1.x](docs/upgrading.md) for the full list before moving a 1.x install to 2.0.0.
 
 ## Audit trail
 
-Enable with `HCAPTCHA_LOGGING=true` (or `hcaptcha.logging.enabled`) and run the published migration. Every verification attempt — success or failure — writes one row to `hcaptcha_verifications` (configurable table/connection) via `Core45\HCaptcha\Support\VerificationLogger`, which never lets a logging failure fail the verification itself.
-
-Stored: `success`, `accepted`, `token_hash` (SHA-256 of the token), `hostname`, `challenge_ts`, `score`, `error_codes` (JSON), `rejected_by`, plus `ip` / `user_agent` / `url` when their respective PII toggles are on, and timestamps.
-
-**Deliberately not stored: the raw token.** It is a single-use credential — by the time it could be logged it is already spent, so keeping it would be a liability with no benefit. Only its SHA-256 hash is kept, which is enough to correlate a replay without being able to replay it yourself.
-
-The PII toggles (`logging.store_ip`, `logging.store_user_agent`, `logging.store_url`) all default to `false`. When `store_url` is enabled it records the request path **without the query string** — a query string routinely carries signed-URL signatures, password-reset tokens, and email addresses, none of which belong in a 90-day audit table. Enable any of these only with a lawful basis.
-
-`logging.log_missing_token` also defaults to `false`. A submission with no token at all costs an attacker nothing and never reaches hCaptcha, so recording it by default would let anyone inflate the audit table with free, unauthenticated POSTs. Turn it on only alongside route throttling.
-
-`Core45\HCaptcha\Models\HCaptchaVerification` ships three scopes: `scopeFailed()` (`where('accepted', false)`), `scopeRejectedLocally()` (`whereNotNull('rejected_by')`, a genuine token a local assertion turned down), and `scopeForToken(string $tokenHash)` (attempts sharing a token hash — the fingerprint of a replay).
-
-Prune old rows with the console command, and schedule it:
-
-```php
-use Illuminate\Support\Facades\Schedule;
-
-Schedule::command('hcaptcha:prune')->daily();
-```
-
-```bash
-php artisan hcaptcha:prune                 # uses hcaptcha.logging.retention_days (default 90)
-php artisan hcaptcha:prune --days=30
-php artisan hcaptcha:prune --chunk=500
-```
-
-Setting `retention_days` to `0` disables pruning; the command exits with a warning and deletes nothing.
+An optional audit trail logs every verification attempt to `hcaptcha_verifications`, stores a SHA-256 hash of the token (never the raw token), and ships a pruning command. See [Audit trail](docs/audit-trail.md) for what's stored, the PII toggles, and how the migration is registered.
 
 ## Fail-open vs fail-closed
 
@@ -444,57 +447,11 @@ Stated plainly because the alternative — implying one captcha equals one submi
 
 ## Content Security Policy
 
-hCaptcha needs a few directives allowed. `HCaptchaManager::cspDirectives()` (also `HCaptcha::cspDirectives()` on the facade) returns them, so you can feed them into whatever builds your policy header rather than retyping the origins:
-
-```php
-HCaptchaManager::cspDirectives();
-// [
-//     'script-src'  => ['https://hcaptcha.com', 'https://*.hcaptcha.com'],
-//     'frame-src'   => ['https://hcaptcha.com', 'https://*.hcaptcha.com'],
-//     'style-src'   => ['https://hcaptcha.com', 'https://*.hcaptcha.com'],
-//     'connect-src' => ['https://hcaptcha.com', 'https://*.hcaptcha.com'],
-// ]
-```
-
-The wildcard subdomain is deliberate: hCaptcha rotates its asset subdomain by region and over time, so pinning a specific one will eventually break.
-
-If your `script-src` also uses a nonce (no `'unsafe-inline'`), register a resolver so the widget's two `<script>` tags carry it:
-
-```php
-use Core45\HCaptcha\HCaptchaManager;
-
-HCaptchaManager::nonceUsing(fn (): ?string => request()->attributes->get('csp-nonce'));
-```
-
-With no resolver registered, the package falls back to Laravel's own Vite nonce (`Vite::useCspNonce()`) if one was set for the request, and otherwise emits no `nonce` attribute at all.
-
-**Limitation for widgets rendered inside a Livewire update.** A widget whose first appearance on the page is a plain Livewire component update — a modal opened after mount, for instance — is picked up by a `@script` fallback, because a `<script>` tag delivered through Livewire's DOM patch never executes. Livewire evaluates the content of `@script` through a function constructor, and no nonce can authorise that. Under a strict policy without `'unsafe-eval'`, that fallback cannot run, and the widget will not render in that case. To support that case your directive needs to read:
-
-```
-script-src 'self' 'nonce-<your-nonce>' 'unsafe-eval'
-```
-
-Adding `'unsafe-eval'` is a real, material weakening of the policy: it re-enables `eval()`, `Function()` and similar dynamic evaluation for the *entire page*, not narrowly for this package's fallback. Decide with that cost in view, not as a box to tick. This requirement comes from Livewire itself, not from hCaptcha — this package's own scripts never need `'unsafe-eval'`, so a page that never renders the widget for the first time inside a Livewire update (full loads and `wire:navigate` transitions only) does not need it either. Note this is scoped to this package: a Livewire and Alpine page in general commonly needs `'unsafe-eval'` regardless, because Alpine's own expression evaluation also requires it unless you build Alpine's CSP-compatible variant.
+hCaptcha needs a few directives allowed, and widgets support nonces via `HCaptchaManager::nonceUsing()`. See [Content Security Policy](docs/content-security-policy.md) for the directive list, nonce setup, and a Livewire-specific `'unsafe-eval'` caveat.
 
 ## Translations
 
-22 locales ship in `resources/lang`: `bg`, `cs`, `de`, `el`, `en`, `es`, `et`, `fi`, `fr`, `hr`, `hu`, `it`, `lt`, `lv`, `nl`, `pl`, `pt`, `sk`, `sl`, `sq`, `sv`, `uk`.
-
-Publish and customize with:
-
-```bash
-php artisan vendor:publish --tag=hcaptcha-lang
-```
-
-Each locale file (`hcaptcha::hcaptcha.*`) has five keys:
-
-| Key | Used for |
-| --- | --- |
-| `failed` | Token rejected by hCaptcha |
-| `missing` | Form submitted with no token |
-| `unavailable` | hCaptcha unreachable, failed closed |
-| `expired` | Token already spent |
-| `label` | Accessible label on the widget wrapper / Filament field |
+22 locales ship in `resources/lang`, each with five keys. See [Translations](docs/translations.md) for the full list and how to publish and customize them.
 
 ## Testing
 
@@ -515,6 +472,52 @@ Http::assertSentCount(1); // the memoization guarantee: one token per field, one
 
 Browser tests in a consuming app can point `hcaptcha.script.url` at the package's stub, `resources/js/fake-api.js` (served by a route of your own), which implements `render`, `execute`, `reset` and `getResponse` without the network and exposes `window.__fakeHCaptcha`.
 
+### `HCaptcha::fake()`
+
+For tests that would rather not fake the HTTP layer at all:
+
+```php
+use Core45\HCaptcha\Facades\HCaptcha;
+
+$hcaptcha = HCaptcha::fake(); // accepts every token from here on
+
+$this->post('/contact', ['h-captcha-response' => \Core45\HCaptcha\Testing\FakeVerifier::TOKEN])
+    ->assertSessionHasNoErrors();
+
+$hcaptcha->assertVerifiedFor('h-captcha-response');
+```
+
+`HCaptcha::fake(bool $passes = true): FakeVerifier` binds a `Core45\HCaptcha\Testing\FakeVerifier` that answers without touching the network. `FakeVerifier` exposes:
+
+- `pass()` — accept every token from here on.
+- `fail(string $errorCode = 'invalid-input-response')` — reject every token, with a chosen error code (a spent token, for instance, is `already-seen-response`).
+- `respondWith(Closure|VerificationResult $answer)` — for anything the two switches above don't cover: an outage, a rejected hostname, a score. The closure receives `(?string $token, VerificationContext $context)`.
+- `verifications()` — every call made through the fake, in order.
+- `assertVerified(?Closure $callback = null)`, `assertVerifiedFor(string $field)`, `assertVerifiedTimes(int $times)`, `assertNothingVerified()`.
+
+A missing token is still answered as missing, whatever the fake was told to do — a test that forgets to fill the field sees the real "please complete the captcha" outcome, not a pass.
+
+While the fake is bound, every widget — the Blade component and the Filament field alike — renders `resources/views/fake.blade.php` instead of hCaptcha's real widget: a hidden input pre-filled with `FakeVerifier::TOKEN`, so a plain form post passes with no JavaScript at all (Filament's field has no `name` on that input — its Livewire state-path binding carries the value instead), plus a `[data-fake-hcaptcha-checkbox]` button for a browser test to click, which fills the same input via an `input`/`change` event for Livewire and Filament to pick up.
+
+That button's click handler is an inline `onclick` attribute. A browser test running under a strict `script-src` (no `'unsafe-inline'`) must either allow inline scripts for the test, or drive the hidden input directly instead of clicking the button.
+
+## Diagnostics
+
+```bash
+php artisan hcaptcha:doctor
+```
+
+Reports what an installation's configuration will actually do, without making a network call and without ever printing the secret. It checks:
+
+- **Credentials** — whether `hcaptcha.sitekey` / `hcaptcha.secret` resolve to something usable, and warns if either is hCaptcha's public always-pass test pair outside a `local` or `testing` environment.
+- **Profiles** — every name in `hcaptcha.profiles` resolves both a sitekey and a secret (falling back to the global pair where the profile leaves a half unset).
+- **Hostnames** — what `hcaptcha.hostnames` resolves to, and whether `hostnames_strict` is on.
+- **Audit trail** — if `logging.enabled`, whether the `hcaptcha_verifications` table exists, and warns when a PII toggle (`store_ip`, `store_user_agent`, `store_url`) is on.
+
+Exits `SUCCESS` (`0`) when nothing is wrong, `FAILURE` (`1`) otherwise — usable as a deployment gate.
+
 ## Versioning & License
 
 Follows [Semantic Versioning](https://semver.org/). Licensed under the [MIT License](LICENSE.md).
+
+See [SECURITY.md](SECURITY.md) for reporting a vulnerability, and [docs/support-policy.md](docs/support-policy.md) for which versions receive fixes and what counts as this package's public API.

@@ -36,6 +36,12 @@ class HCaptcha extends Component
     public function __construct(
         protected HCaptchaManager $manager,
         public ?string $sitekey = null,
+        /**
+         * Named credential profile from `hcaptcha.profiles`. The rule,
+         * middleware or Filament field guarding the same form must name the
+         * same profile, or the token is checked against another secret.
+         */
+        public ?string $profile = null,
         public ?string $theme = null,
         public ?string $size = null,
         public ?string $locale = null,
@@ -50,6 +56,11 @@ class HCaptcha extends Component
          */
         public array $options = [],
     ) {
+        // An explicit sitekey wins over the profile's: a caller who passed
+        // both meant the one they spelled out. Otherwise the profile supplies
+        // it, and with no profile this resolves to the global key.
+        $this->sitekey = $sitekey ??= $manager->profileSitekey($profile);
+
         $this->available = $manager->configured($sitekey);
         $this->widgetId = $manager->widgetId($id);
 
@@ -89,6 +100,15 @@ class HCaptcha extends Component
     public function fieldName(): string
     {
         return $this->manager->fieldName();
+    }
+
+    /**
+     * Whether `HCaptcha::fake()` is bound, in which case the view renders a
+     * widget a test can solve instead of loading hCaptcha's SDK.
+     */
+    public function faking(): bool
+    {
+        return $this->manager->faking();
     }
 
     public function attributeString(): HtmlString
