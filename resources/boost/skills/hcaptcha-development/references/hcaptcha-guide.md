@@ -26,8 +26,10 @@ Other publish tags, from `HCaptchaServiceProvider::bootPublishing()`:
 - `hcaptcha-views` → `resources/views/vendor/hcaptcha/*.blade.php`
 - `hcaptcha-migrations` → `database/migrations/*_create_hcaptcha_verifications_table.php`
 
-Only publish and migrate `hcaptcha-migrations` if you are turning on the audit trail. Nothing else
-in the package touches a database.
+`hcaptcha-migrations` only needs publishing if you want to own the audit migration yourself —
+switching the audit trail on is enough for the package to load its own copy, so the usual path is
+`HCAPTCHA_LOGGING=true` plus `php artisan migrate` with no publish step. See
+[Audit trail](#audit-trail). Nothing else in the package touches a database.
 
 Both `sitekey` and `secret` default to `null`. This is deliberate: a missing secret throws
 `MissingSecretException` the first time a real verification is attempted, and a missing sitekey
@@ -74,7 +76,7 @@ code every native entry point uses, not a second implementation.
 
 - **`http_client` is ignored.** The old config named a Guzzle-based HTTP client class. Replacing
   Guzzle with Laravel's own `Http` client is the entire reason this package exists — see
-  [Why this exists](#why-this-exists) in the README: `buzz/laravel-h-captcha` pins
+  [Highlights](../../../../../README.md#highlights) in the README: `buzz/laravel-h-captcha` pins
   `guzzlehttp/guzzle 6.*|7.*` and cannot install alongside Guzzle 8. A configured `http_client` logs
   a warning and is otherwise skipped; it never fails the boot.
 - **The old placeholder defaults now throw.** The reference package's config defaulted `secret` and
@@ -93,12 +95,12 @@ code every native entry point uses, not a second implementation.
   endpoint, and an outright rejection (see
   [Failure modes and error codes](#failure-modes-and-error-codes)), and fails **closed** on a
   transport error unless `HCAPTCHA_FAIL_OPEN=true` is set — see
-  [Fail-open vs fail-closed](#fail-open-vs-fail-closed) in the README.
+  [Fail-open vs fail-closed](../../../../../README.md#fail-open-vs-fail-closed) in the README.
 
 ### The hostname check is the most likely migration surprise
 
 `hostnames` is **on by default** in this package (see
-[Your sitekey is public](#the-hostname-check-matters) above), derived from `APP_URL`. The old
+[Config reference](#config-reference)), derived from `APP_URL`. The old
 package had no equivalent check. If the migrated form is served from a host other than `APP_URL` —
 a staging subdomain, a second brand on the same install, a reverse proxy — genuine submissions will
 start failing with `hostname-mismatch` immediately after the swap, with no code change to point to.
@@ -111,8 +113,9 @@ from before going live with the migration.
   messages than the compat layer's single bool.
 - Move `.env` keys from `CAPTCHA_*` to `HCAPTCHA_*`.
 - Delete `config/captcha.php` once nothing reads it.
-- Add `throttle` to the route the captcha guards (see [Rate limiting](#rate-limiting) in the
-  README) — neither package throttles on its own.
+- Add `throttle` to the route the captcha guards (see
+  [Rate limiting](../../../../../README.md#rate-limiting) in the README) — neither package throttles
+  on its own.
 
 ## Config reference
 

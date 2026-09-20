@@ -4,6 +4,25 @@ All notable changes to `core45/laravel-h-captcha` are documented in this file, i
 [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## 2.0.3 - 2026-09-20
+
+Documentation only. No runtime code changed. 2.0.2 was never tagged or published; that version
+number is skipped.
+
+### Fixed
+
+- 2.0.1 corrected the audit-trail section of the Boost skill's reference guide to say that publishing
+  `hcaptcha-migrations` is not required, but left the setup section still instructing a publish. The
+  shipped guide therefore contradicted itself. A skill file is read by AI coding assistants, and a
+  file that argues with itself is worse than either statement alone, because nothing indicates which
+  one wins. The setup section now points at the audit-trail section instead of repeating a rule.
+- Four broken anchor links in the reference guide, all predating 2.0.1. `#why-this-exists` and
+  `#the-hostname-check-matters` named headings that exist in neither document. `#fail-open-vs-fail-closed`
+  and `#rate-limiting` named README headings but were written as same-document anchors, so they
+  resolved to nothing from inside the guide; both are now relative links to `README.md`. Every
+  anchor in the guide, `SKILL.md` and `README.md` was then resolved against the real heading slugs
+  to confirm none are left dangling.
+
 ## 2.0.1 - 2026-09-20
 
 2.0.0 shipped the `hcaptcha-development` Laravel Boost skill carrying documentation that predated
