@@ -123,13 +123,20 @@ at render time in `HCaptchaManager::locale()`, not baked into the config file.
 ```php
 'sitekey' => env('HCAPTCHA_SITEKEY'),
 'secret' => env('HCAPTCHA_SECRET'),
+'profiles' => [
+    // 'marketing' => [
+    //     'sitekey' => env('HCAPTCHA_MARKETING_SITEKEY'),
+    //     'secret' => env('HCAPTCHA_MARKETING_SECRET'),
+    // ],
+],
 'endpoint' => env('HCAPTCHA_ENDPOINT', 'https://api.hcaptcha.com/siteverify'),
 'timeout' => (int) env('HCAPTCHA_TIMEOUT', 10),
-'retries' => (int) env('HCAPTCHA_RETRIES', 1),
+'retries' => (int) env('HCAPTCHA_RETRIES', 0),
 'max_token_length' => (int) env('HCAPTCHA_MAX_TOKEN_LENGTH', 8192),
 'fail_open' => (bool) env('HCAPTCHA_FAIL_OPEN', false),
 'send_sitekey' => (bool) env('HCAPTCHA_SEND_SITEKEY', true),
 'hostnames' => env('HCAPTCHA_HOSTNAMES', parse_url((string) env('APP_URL'), PHP_URL_HOST)),
+'hostnames_strict' => (bool) env('HCAPTCHA_HOSTNAMES_STRICT', false),
 'max_score' => env('HCAPTCHA_MAX_SCORE') !== null ? (float) env('HCAPTCHA_MAX_SCORE') : null,
 'field' => 'h-captcha-response',
 'locale' => null,
@@ -143,7 +150,11 @@ at render time in `HCaptchaManager::locale()`, not baked into the config file.
     'store_user_agent' => (bool) env('HCAPTCHA_LOG_USER_AGENT', false),
     'store_url' => (bool) env('HCAPTCHA_LOG_URL', false),
     'log_missing_token' => (bool) env('HCAPTCHA_LOG_MISSING_TOKEN', false),
+    'log_oversized_token' => (bool) env('HCAPTCHA_LOG_OVERSIZED_TOKEN', false),
     'retention_days' => (int) env('HCAPTCHA_RETENTION_DAYS', 90),
+    'migrations' => env('HCAPTCHA_LOGGING_MIGRATIONS') !== null
+        ? filter_var(env('HCAPTCHA_LOGGING_MIGRATIONS'), FILTER_VALIDATE_BOOL)
+        : null,
 ],
 ```
 
@@ -173,6 +184,68 @@ skipping it leaves both layers of the origin check absent.
 `max_score` is a **risk** score — the inverse of reCAPTCHA v3, where higher means more bot-like —
 and only Enterprise accounts ever populate `score` in the response; on other accounts the check
 is silently skipped because `$result->score` is `null`.
+
+`hostnames_strict` (`HCAPTCHA_HOSTNAMES_STRICT`, default `false`) extends the `hostnames` check to
+reject a response whose hostname is *missing* or reported as `not-provided`, rather than letting it
+through. hCaptcha omits the hostname during busy periods, so turning this on trades a small number of
+false rejections for closing the one hole `hostnames` otherwise leaves open. `hcaptcha:doctor` warns
+when it is enabled.
+
+## Credential profiles
+
+One installation can serve several sites or brands from different hCaptcha accounts. Name each
+sitekey/secret pair under `hcaptcha.profiles`, then select it per widget, per rule, per route, or per
+Filament field.
+
+```php
+// config/hcaptcha.php
+'profiles' => [
+    'marketing' => [
+        'sitekey' => env('HCAPTCHA_MARKETING_SITEKEY'),
+        'secret' => env('HCAPTCHA_MARKETING_SECRET'),
+    ],
+],
+```
+
+```blade
+<x-hcaptcha profile="marketing" />
+```
+
+```php
+use Core45\HCaptcha\Rules\HCaptcha as HCaptchaRule;
+
+$request->validate(['h-captcha-response' => [new HCaptchaRule(profile: 'marketing')]]);
+
+// middleware parameters are field,sitekey,profile -- leave the sitekey empty to take it from the profile
+Route::post('/signup', SignupController::class)->middleware('hcaptcha:h-captcha-response,,marketing');
+
+// Filament
+\Core45\HCaptcha\Filament\Forms\Components\HCaptcha::make()->profile('marketing');
+```
+
+Resolution rules (`Core45\HCaptcha\Support\Credentials::for()`):
+
+- A `null` or empty profile returns the global `hcaptcha.sitekey` / `hcaptcha.secret`.
+- **An unknown profile name throws `InvalidArgumentException`** — it deliberately does *not* fall back
+  to the global pair. A silent fallback would pair one account's sitekey with another account's
+  secret and fail every verification with `sitekey-secret-mismatch`, with nothing to say why.
+- A profile that defines only one half inherits the other half from the global config, so a profile
+  may override the sitekey alone. A value that is present but unusable — an empty string, or one of
+  the placeholder literals in `HCaptchaManager::PLACEHOLDER_CREDENTIALS`, tested by
+  `HCaptchaManager::isUsableCredential()` — counts as unset and inherits too. `hcaptcha:doctor` warns
+  about a half-overridden profile, because that is how a mismatch usually arrives.
+
+**Never let the request choose its own profile.** The profile selects the secret that vouches for the
+token, so a visitor-supplied profile name lets the visitor decide which account validates their
+answer. Pick the profile in server-side code.
+
+Facade helpers: `HCaptcha::profileNames()`, `HCaptcha::profileSitekey(?string $profile)`,
+`HCaptcha::profileCredentials(?string $profile)`.
+
+The profile is part of the memoization key, not just the credentials. `HttpVerifier` keys its memo on
+`$tokenHash.'|'.$scope.'|'.$context->credentialKey()`, and `VerificationContext::credentialKey()` is
+`profile|sitekey` — so a verdict obtained under one profile can never vouch for a check made under
+another, even for the same token and field.
 
 ## The widget
 
@@ -295,7 +368,7 @@ public function messageKey(): string
     return match (true) {
         $this->tokenMissing() => 'hcaptcha::hcaptcha.missing',
         $this->serviceUnavailable => 'hcaptcha::hcaptcha.unavailable',
-        $this->tokenAlreadyUsed() => 'hcaptcha::hcaptcha.expired',
+        $this->tokenAlreadyUsed(), $this->tokenExpired() => 'hcaptcha::hcaptcha.expired',
         default => 'hcaptcha::hcaptcha.failed',
     };
 }
@@ -456,8 +529,12 @@ use Core45\HCaptcha\Facades\HCaptcha;
 $result = HCaptcha::verify($request->input('h-captcha-response'), $request->ip());
 ```
 
-`VerificationResult` fields: `success`, `hostname`, `challengeTs` (`?Carbon`), `score`,
+`VerificationResult` fields: `success`, `accepted`, `hostname`, `challengeTs` (`?Carbon`), `score`,
 `scoreReasons` (list), `errorCodes` (list), `credit`, `serviceUnavailable`, `rejectedBy`.
+
+`success` is hCaptcha's raw verdict; **`accepted` is this package's final one**, and it is what
+`passed()` returns. The two differ whenever a local check rejects a token hCaptcha itself accepted —
+a hostname mismatch or a score over `max_score`. Filter on `accepted`, not `success`.
 
 `VerificationResult::fromResponse()` sets `success` with `($payload['success'] ?? null) === true` —
 an identity check, not a cast. `(bool) "false"`, `(bool) "error"`, and `(bool) -1` are all `true` in
@@ -465,7 +542,8 @@ PHP, so casting a malformed 200 response body could have turned a rejection into
 control whose entire job is to fail closed.
 
 Helpers: `passed()` / `failed()`, `hasErrorCode(string $code)`, `tokenAlreadyUsed()`,
-`tokenMissing()`, `isConfigurationError()`, `messageKey()`, `toArray()` / `jsonSerialize()`.
+`tokenExpired()`, `tokenMalformed()`, `tokenMissing()`, `isConfigurationError()`, `messageKey()`,
+`toArray()` / `jsonSerialize()`.
 
 `passed()` is not simply hCaptcha's `success`. `HttpVerifier::assert()` applies two local
 assertions after a genuine `success: true` response:
@@ -516,14 +594,22 @@ the configuration-error set above and the two locally-appended reasons `hostname
 
 ## Audit trail
 
-Enable: `HCAPTCHA_LOGGING=true`, publish + run `hcaptcha-migrations`.
+Enable: set `HCAPTCHA_LOGGING=true` and run `php artisan migrate`. **Publishing is not required** —
+`logging.migrations` is `null` by default, which follows `logging.enabled`, so the package loads its
+own migration once the audit trail is switched on and creates nothing in an application that never
+asked for the table (`HCaptchaServiceProvider::shouldLoadMigrations()`). Set
+`HCAPTCHA_LOGGING_MIGRATIONS=true` to keep loading it regardless — what an installation that already
+has the table wants, so `migrate:status` keeps recognising it — or `false` plus
+`php artisan vendor:publish --tag=hcaptcha-migrations` to own the migration outright.
 
 `VerificationLogger::record()` is called after every verification attempt that actually reaches
 `HttpVerifier::verify()` — including a missing-token short-circuit, which is recorded with
 `token_hash: null`. A logging failure (e.g. a database outage) is caught and logged as a `warning`,
 never allowed to fail the verification itself.
 
-Stored columns (`hcaptcha_verifications` migration): `success` (indexed), `token_hash` (SHA-256,
+Stored columns (`hcaptcha_verifications` migration): `success` (indexed — hCaptcha's raw verdict),
+`accepted` (indexed — the package's final verdict after the local hostname and score checks; this is
+the column to filter on), `token_hash` (SHA-256,
 64 chars, indexed — never the raw token), `hostname`, `challenge_ts`, `score` (`decimal(5,4)`,
 nullable), `error_codes` (JSON, nullable), `rejected_by`, `ip` (nullable, gated by
 `logging.store_ip`), `user_agent` (nullable, gated by `logging.store_user_agent`, truncated to 512
@@ -540,12 +626,18 @@ tokenless submission gets a row at all. `HttpVerifier::verify()` short-circuits 
 before any HTTP call, so recording it by default would let anyone inflate the audit table for free
 with unauthenticated POSTs that never touched hCaptcha. Only enable it alongside route throttling.
 
+`logging.log_oversized_token` (`HCAPTCHA_LOG_OVERSIZED_TOKEN`, default `false`) is the same trade for
+a token longer than `max_token_length`: it is rejected before any HTTP call, so recording it is free
+for the sender. The row carries no token hash.
+
 **Why not the raw token:** by the time a token could be logged it has already been spent against
 hCaptcha — a stored copy would have no verification value and would only be a liability if the
 database were ever compromised. The SHA-256 hash is enough to spot a replayed token
 (`HCaptchaVerification::scopeForToken()`), without being usable to forge or replay anything.
 
-Model scopes: `scopeFailed()` (`where('success', false)`), `scopeForToken(string $tokenHash)`.
+Model scopes: `scopeFailed()` (`where('accepted', false)` — the package's verdict, *not*
+hCaptcha's raw `success`), `scopeRejectedLocally()` (`whereNotNull('rejected_by')` — passed hCaptcha
+but failed the hostname or score check), `scopeForToken(string $tokenHash)`.
 
 Pruning:
 
@@ -564,7 +656,106 @@ Schedule::command('hcaptcha:prune')->daily();
 `retention_days <= 0` disables pruning entirely — the command prints a warning and does nothing,
 rather than deleting the whole table.
 
+## Events
+
+Every verification that reaches `HttpVerifier::verify()` dispatches
+`Core45\HCaptcha\Events\VerificationCompleted` (`HttpVerifier.php:128`) — a `final readonly class`
+carrying `VerificationResult $result`, `VerificationContext $context`, and `string $tokenHash` (the
+SHA-256 hash; the raw token is never in the payload). It also exposes `passed(): bool`.
+
+This is the hook for metrics, alerting, or a custom store **without** opting into the database audit
+trail:
+
+```php
+Event::listen(VerificationCompleted::class, function (VerificationCompleted $event) {
+    if (! $event->passed()) {
+        Metrics::increment('hcaptcha.rejected', ['field' => $event->context->field]);
+    }
+});
+```
+
+A memoized verdict does not re-dispatch — the event fires once per real verification, not once per
+caller.
+
+## Swapping the verifier
+
+Everything verifies through the `Core45\HCaptcha\Contracts\Verifier` interface, bound to
+`HttpVerifier` as a **scoped** binding. The interface is two methods:
+
+```php
+public function verify(?string $token, ?string $clientIp = null, string|VerificationContext|null $scope = null): VerificationResult;
+public function flush(): void;
+```
+
+Rebind `Verifier::class` to supply your own implementation — that is the supported extension point,
+and the only correct alternative to calling `siteverify` directly. `flush()` clears the per-request
+memo; the scoped binding already resets it between requests, so it matters only in a long-running
+worker (Octane, a queue worker) that handles more than one logical request in one container
+lifetime.
+
+## Diagnostics
+
+```bash
+php artisan hcaptcha:doctor
+```
+
+Diagnoses the misconfigurations that otherwise surface as runtime verification failures. It makes no
+network calls and never prints a secret, and it exits non-zero when it finds a problem, so it works
+as a CI or deploy gate. It checks:
+
+- **Global credentials** — `sitekey` and `secret` present and usable. Prints the sitekey (it is
+  public anyway), confirms only that the secret is set. Warns when hCaptcha's public *test*
+  credentials are in use outside `local`/`testing`.
+- **Profiles** — that every profile in `hcaptcha.profiles` resolves to a usable pair. Warns on a
+  profile that overrides one half and inherits the other, the usual source of
+  `sitekey-secret-mismatch`.
+- **Hostnames** — warns when `hostnames` is unset (the dashboard allowlist is then the only origin
+  control), and when `hostnames_strict` is on (it can reject responses during hCaptcha busy periods).
+- **Audit trail** — when logging is enabled, that the table exists; errors with a "run migrations"
+  hint when it does not. Warns when IP, user agent, or URL storage is on, as a reminder that those
+  need a lawful basis and a retention policy.
+
 ## Testing
+
+### `HCaptcha::fake()` — the package's own test double
+
+The shortest path: swap the verifier, no HTTP layer involved.
+
+```php
+use Core45\HCaptcha\Facades\HCaptcha;
+use Core45\HCaptcha\Testing\FakeVerifier;
+
+$hcaptcha = HCaptcha::fake();            // passes everything
+$hcaptcha = HCaptcha::fake(false);       // rejects everything
+
+$this->post('/contact', ['h-captcha-response' => FakeVerifier::TOKEN])
+    ->assertSessionHasNoErrors();
+
+$hcaptcha->assertVerifiedFor('h-captcha-response');
+$hcaptcha->assertVerifiedTimes(1);
+```
+
+`HCaptcha::fake()` instance-binds `Verifier::class` to a `FakeVerifier` and forgets the resolved
+manager, so the widget renders the package's fake partial (`resources/views/fake.blade.php`) instead
+of loading hCaptcha's SDK — a browser test can then solve the captcha without a network call.
+`FakeVerifier` deliberately does not extend `HttpVerifier`, so a faked test can never reach the real
+endpoint.
+
+Shaping the answer: `pass()`, `fail(string $errorCode = 'invalid-input-response')`,
+`respondWith(Closure|VerificationResult $answer)`. A `null` or empty token always yields
+`missingToken()` regardless of how the fake is configured, so the implicit-rule behaviour stays
+honest.
+
+Assertions: `assertVerified(?Closure $callback = null)`, `assertVerifiedFor(string $field)`,
+`assertVerifiedTimes(int $times)`, `assertNothingVerified()`. The raw record list is available via
+`verifications()`, each entry being `['token' => ..., 'clientIp' => ..., 'context' => ..., 'result' => ...]`.
+
+Note that `FakeVerifier` does **not** memoize — `flush()` is a no-op and every call is recorded. That
+is the point: `assertVerifiedTimes()` counts call sites, which is the opposite of what the HTTP-level
+assertion below measures. To assert the *memoization contract* itself, use `Http::fake()` and count
+HTTP calls.
+
+### `Http::fake()` — for asserting the memoization contract
 
 No network calls are needed to test anything in a consuming application — fake the HTTP layer:
 

@@ -4,6 +4,41 @@ All notable changes to `core45/laravel-h-captcha` are documented in this file, i
 [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## 2.0.1 - 2026-09-20
+
+2.0.0 shipped the `hcaptcha-development` Laravel Boost skill carrying documentation that predated
+several 2.0 features and contradicted the code in four places. The skill ships inside the package
+and is read by AI coding assistants, so a wrong line in it becomes wrong generated code in consuming
+applications. This release corrects and extends it. No runtime code changed.
+
+### Fixed
+
+- The guide documented `HCaptchaVerification::scopeFailed()` as `where('success', false)`. It filters
+  on `where('accepted', false)` — the package's verdict after the local hostname and score checks,
+  not hCaptcha's raw answer. An application filtering its audit trail on the documented column got
+  results that diverge from `passed()` on precisely the rows where the two disagree.
+- Both the skill and the guide instructed publishing `hcaptcha-migrations` before running
+  `php artisan migrate`. Publishing is not required: `logging.migrations` defaults to `null`, which
+  follows `logging.enabled`, so the package loads its own migration once the audit trail is switched
+  on. Following the old instruction left the application owning a duplicate of the package migration.
+- The guide's reproduced config block gave `retries` a default of `1`; it has been `0` since 2.0.0.
+- The guide's reproduced `messageKey()` body omitted the `tokenExpired()` arm added in 2.0.0.
+
+### Added
+
+- Skill and guide coverage for the 2.0 features they had not caught up with: named credential
+  profiles — including the unknown-profile `InvalidArgumentException`, the usability-based half
+  fallback, and the profile's place in the memo key via `VerificationContext::credentialKey()` —
+  `HCaptcha::fake()` and `Testing\FakeVerifier`, `hcaptcha:doctor`, the `VerificationCompleted`
+  event, the `Contracts\Verifier` extension point and `flush()`, the `accepted` column and the
+  `rejectedLocally()` scope, and the `hostnames_strict`, `logging.log_oversized_token` and
+  `logging.migrations` config keys.
+- Guidance on `accepted` versus `success` as the column to query, and on when to reach for
+  `HCaptcha::fake()` rather than `Http::fake()` — the fake verifier does not memoize, so only the
+  HTTP-level `Http::assertSentCount()` proves the single-use token cost one call.
+- `resources/boost/guidelines/core.blade.php` now covers credential profiles, testing with
+  `HCaptcha::fake()`, querying the audit trail on `accepted`, and `hcaptcha:doctor`.
+
 ## 2.0.0 - 2026-09-20
 
 ### Changed
