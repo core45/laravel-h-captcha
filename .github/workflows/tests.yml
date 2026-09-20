@@ -30,7 +30,7 @@ jobs:
             testbench: '^11.0'
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup PHP ${{ matrix.php }}
         uses: shivammathur/setup-php@v2
@@ -80,7 +80,7 @@ jobs:
             testbench: '^11.0'
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup PHP ${{ matrix.php }}
         uses: shivammathur/setup-php@v2
@@ -128,7 +128,7 @@ jobs:
             testbench: '^11.0'
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup PHP ${{ matrix.php }}
         uses: shivammathur/setup-php@v2
