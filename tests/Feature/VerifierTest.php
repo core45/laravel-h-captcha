@@ -479,9 +479,14 @@ it('rejects a genuine token solved on another site using our own sitekey', funct
  * logged once per process rather than on every verification: a deliberately
  * multi-domain install should not have its error channel flooded at request
  * rate.
+ *
+ * Reaching this state now takes an explicit opt-out. An empty allowlist on its
+ * own rejects instead, because silently accepting every hostname is the one
+ * outcome the check exists to prevent.
  */
 it('logs an error once per process while the hostname check is disabled', function (): void {
     config()->set('hcaptcha.hostnames', ['', null]);
+    config()->set('hcaptcha.hostnames_required', false);
     fakeVerifierSiteverify();
 
     Log::shouldReceive('error')

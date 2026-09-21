@@ -126,6 +126,7 @@ Every key in `config/hcaptcha.php`:
 | `send_sitekey` | `HCAPTCHA_SEND_SITEKEY` | `true` |
 | `hostnames` | `HCAPTCHA_HOSTNAMES` | host of `APP_URL` |
 | `hostnames_strict` | `HCAPTCHA_HOSTNAMES_STRICT` | `false` |
+| `hostnames_required` | `HCAPTCHA_HOSTNAMES_REQUIRED` | `true` |
 | `max_score` | `HCAPTCHA_MAX_SCORE` | `null` |
 | `field` | — | `h-captcha-response` |
 | `locale` | — | `null` (resolves the app locale at render time) |
@@ -158,7 +159,9 @@ Two layers limit that attack, and you want both.
 1. **The domain allowlist on the sitekey in the hCaptcha dashboard.** This is the authoritative one, and it is *off by default* for new sitekeys. Turn it on.
 2. **This package's `hostnames` check**, on by default and derived from `APP_URL`. hCaptcha documents the reported hostname as browser-derived and "not suitable for authentication", and says it may come back as `not-provided` under load. Treat this check as a policy that catches careless misuse, not as proof of origin.
 
-Set `HCAPTCHA_HOSTNAMES` to a comma-separated list for multi-domain installs. Setting it to an empty string disables the check, which is logged as an `error` once per process. A response whose hostname is missing or `not-provided` passes with a `warning`; set `HCAPTCHA_HOSTNAMES_STRICT=true` to reject those instead, with `rejectedBy: hostname-unknown`.
+Set `HCAPTCHA_HOSTNAMES` to a comma-separated list for multi-domain installs. An allowlist that resolves to nothing — `HCAPTCHA_HOSTNAMES` unset and `APP_URL` without a scheme, for example — is rejected by default (`rejectedBy: hostname-allowlist-empty`), because an empty list is the one thing standing between a public sitekey and a token solved on somebody else's page; silently skipping the check would be the worst default. Set `HCAPTCHA_HOSTNAMES_REQUIRED=false` to get the old behaviour instead, where an empty list skips the check and logs an `error` once per process. A response whose hostname is missing or `not-provided` passes with a `warning`; set `HCAPTCHA_HOSTNAMES_STRICT=true` to reject those instead, with `rejectedBy: hostname-unknown`.
+
+Applications whose domains live in a database, rather than in config, can supply the allowlist at runtime instead of through `HCAPTCHA_HOSTNAMES` — see [Supplying hostnames from your own source](#supplying-hostnames-from-your-own-source) below.
 
 `max_score` is a **risk** score, the inverse of reCAPTCHA v3: higher means more bot-like, so this is a ceiling, not a floor, and it only applies to Enterprise accounts that return a `score` at all.
 
@@ -171,6 +174,57 @@ token:   10000000-aaaa-bbbb-cccc-000000000001
 ```
 
 Config is intentionally free of container calls (`app()`, `trans()`, etc.) — `php artisan config:cache` evaluates the file once and freezes the result, so the widget locale is resolved at render time by `HCaptchaManager::locale()` instead.
+
+### Supplying hostnames from your own source
+
+`HCAPTCHA_HOSTNAMES` is enough for a single-domain site. An application whose domains live somewhere else — a multi-tenant platform where a shop's domain is a row in the database, and adding one in an admin panel should make that domain captcha-valid immediately, with no env edit and no deploy — binds its own `Core45\HCaptcha\Contracts\HostnameProvider` instead:
+
+```php
+namespace Core45\HCaptcha\Contracts;
+
+interface HostnameProvider
+{
+    /**
+     * @return list<string>
+     */
+    public function hostnames(): array;
+}
+```
+
+An implementation reading from an Eloquent model, cached so every verification does not hit the database:
+
+```php
+use Core45\HCaptcha\Contracts\HostnameProvider;
+use Illuminate\Contracts\Cache\Repository as Cache;
+
+class TenantDomainHostnameProvider implements HostnameProvider
+{
+    public function __construct(private Cache $cache)
+    {
+    }
+
+    public function hostnames(): array
+    {
+        return $this->cache->remember(
+            'hcaptcha.tenant-hostnames',
+            now()->addMinute(),
+            fn () => Shop::query()->pluck('domain')->all(),
+        );
+    }
+}
+```
+
+Register the binding with `scoped()`, not `singleton()`, in a service provider's `register()`:
+
+```php
+$this->app->scoped(HostnameProvider::class, TenantDomainHostnameProvider::class);
+```
+
+`scoped()` matters under Octane: a `singleton()` binding would resolve once per worker boot and then hand out that first request's allowlist to every later request on the same worker. This package's own `HttpVerifier` is bound the same way, and never caches the resolved hostnames itself — the provider is called fresh on every `verify()`, so it is the provider's own job to decide whether and how long to cache, as in the example above.
+
+**Resolution order.** On each verification, the bound provider is asked first. If it returns `[]`, the verifier falls back to `hcaptcha.hostnames` (`HCAPTCHA_HOSTNAMES` / the host of `APP_URL`). If that is also empty, the request is rejected — see the `hostnames_required` behaviour above. In other words: returning `[]` from your provider does **not** disable the check or open it up; it means "I have nothing to add", and the config fallback and the empty-list rejection still apply underneath it. A provider that genuinely wants to allow every hostname has to say so explicitly by turning `hostnames_required` off, not by returning an empty array.
+
+Every hostname source — the provider, `HCAPTCHA_HOSTNAMES`, config — is normalized the same way before comparison (lowercased, trimmed, blank entries dropped), so a domain saved with stray casing or whitespace still matches.
 
 ## The widget
 

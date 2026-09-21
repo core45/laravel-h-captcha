@@ -7,9 +7,11 @@ namespace Core45\HCaptcha;
 use Core45\HCaptcha\Compat\CaptchaCompat;
 use Core45\HCaptcha\Console\DoctorCommand;
 use Core45\HCaptcha\Console\PruneVerificationsCommand;
+use Core45\HCaptcha\Contracts\HostnameProvider;
 use Core45\HCaptcha\Contracts\Verifier;
 use Core45\HCaptcha\Http\Middleware\VerifyHCaptcha;
 use Core45\HCaptcha\Rules\HCaptcha as HCaptchaRule;
+use Core45\HCaptcha\Support\ConfigHostnameProvider;
 use Core45\HCaptcha\Support\HttpVerifier;
 use Core45\HCaptcha\Support\VerificationLogger;
 use Core45\HCaptcha\View\Components\HCaptcha as HCaptchaComponent;
@@ -43,6 +45,11 @@ class HCaptchaServiceProvider extends ServiceProvider
         // scoped(), not singleton(): under Octane the memoized verdicts and the
         // captured Request must not survive into the next request.
         $this->app->scoped(VerificationLogger::class);
+
+        // The default allowlist source. An application that keeps its domains
+        // in a database rebinds this, so a domain added at runtime is valid
+        // immediately instead of waiting on an env edit and a deploy.
+        $this->app->scoped(HostnameProvider::class, ConfigHostnameProvider::class);
 
         $this->app->scoped(Verifier::class, HttpVerifier::class);
         $this->app->scoped(HttpVerifier::class);
@@ -247,6 +254,7 @@ class HCaptchaServiceProvider extends ServiceProvider
             HttpVerifier::class,
             HCaptchaManager::class,
             VerificationLogger::class,
+            HostnameProvider::class,
         ];
     }
 }

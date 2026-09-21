@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Core45\HCaptcha\Support;
 
+use Core45\HCaptcha\Contracts\HostnameProvider;
 use Core45\HCaptcha\Contracts\Verifier;
 use Core45\HCaptcha\Events\VerificationCompleted;
 use Core45\HCaptcha\Exceptions\MissingSecretException;
@@ -48,6 +49,7 @@ final class HttpVerifier implements Verifier
         private readonly LoggerInterface $logger,
         private readonly VerificationLogger $audit,
         private readonly Dispatcher $events,
+        private readonly HostnameProvider $hostnames,
     ) {
         $this->credentials = new Credentials($config);
     }
@@ -253,7 +255,24 @@ final class HttpVerifier implements Verifier
 
         $hostnames = $this->allowedHostnames();
 
-        if ($hostnames !== []) {
+        if ($hostnames === []) {
+            // Nothing to compare against. Skipping the check here would accept a
+            // token solved on any page in the world, which is the one thing the
+            // hostname check exists to stop, so by default this rejects instead.
+            if ((bool) $this->config->get('hcaptcha.hostnames_required', true)) {
+                // Not latched: a misconfiguration that rejects live traffic must
+                // stay greppable for as long as it lasts.
+                $this->logger->error(
+                    'hCaptcha hostname allowlist resolved to nothing usable, so this token was rejected. '
+                    .'Bind a HostnameProvider, set HCAPTCHA_HOSTNAMES, or set an APP_URL that includes a '
+                    .'scheme. Set HCAPTCHA_HOSTNAMES_REQUIRED=false to skip the check instead of rejecting.'
+                );
+
+                return $result->rejectedLocally('hostname-allowlist-empty');
+            }
+
+            $this->reportHostnameCheckInactive();
+        } else {
             $hostname = mb_strtolower((string) $result->hostname);
 
             if ($hostname === '' || $hostname === 'not-provided') {
@@ -283,45 +302,47 @@ final class HttpVerifier implements Verifier
     }
 
     /**
+     * The allowlist for this verification.
+     *
+     * Resolved per call, never held across requests: a provider backed by a
+     * database is the point of the contract, and a worker that cached the list
+     * would keep serving a stale one until it restarted.
+     *
+     * A provider that returns nothing hands over to `hcaptcha.hostnames` rather
+     * than ending the search. That keeps a provider outage -- or a tenant table
+     * that is briefly empty mid-migration -- from silently widening the
+     * allowlist to everything.
+     *
      * @return list<string>
      */
     private function allowedHostnames(): array
     {
-        $configured = $this->config->get('hcaptcha.hostnames');
+        $provided = HostnameNormalizer::normalize($this->hostnames->hostnames());
 
-        // A string may hold a comma-separated list, because it usually arrives
-        // from HCAPTCHA_HOSTNAMES and an env var cannot carry an array. Without
-        // splitting, "a.test,b.test" became one literal that no real hostname
-        // could ever match.
-        $hostnames = match (true) {
-            is_array($configured) => $configured,
-            is_string($configured) => explode(',', $configured),
-            default => [$configured],
-        };
-
-        $usable = array_values(array_filter(
-            array_map(
-                static fn (string|int|float|bool $hostname): string => mb_strtolower(trim((string) $hostname)),
-                array_filter($hostnames, is_scalar(...)),
-            ),
-            // Blank entries are scalars, so without this an empty string would
-            // survive as a "restriction" that no real hostname can ever match.
-            static fn (string $hostname): bool => $hostname !== '',
-        ));
-
-        // Any route to an empty list disables the check, including an unset
-        // APP_URL or a bare host with no scheme (parse_url returns null for
-        // those). It must not be silent, but once per process is enough.
-        if ($usable === [] && ! self::$hostnameCheckInactiveLogged) {
-            self::$hostnameCheckInactiveLogged = true;
-
-            $this->logger->error(
-                'hCaptcha hostname check is inactive: hcaptcha.hostnames resolved to nothing usable. '
-                .'Set HCAPTCHA_HOSTNAMES, or an APP_URL that includes a scheme. Logged once per process.'
-            );
+        if ($provided !== []) {
+            return $provided;
         }
 
-        return $usable;
+        return HostnameNormalizer::normalize($this->config->get('hcaptcha.hostnames'));
+    }
+
+    /**
+     * Say once per process that the check is off. Only reachable when the
+     * application has explicitly opted out via `hcaptcha.hostnames_required`.
+     */
+    private function reportHostnameCheckInactive(): void
+    {
+        if (self::$hostnameCheckInactiveLogged) {
+            return;
+        }
+
+        self::$hostnameCheckInactiveLogged = true;
+
+        $this->logger->error(
+            'hCaptcha hostname check is inactive: the allowlist resolved to nothing usable and '
+            .'hcaptcha.hostnames_required is false, so tokens are being accepted whatever hostname '
+            .'they were solved on. Logged once per process.'
+        );
     }
 
     /**

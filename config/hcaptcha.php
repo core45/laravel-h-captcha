@@ -135,10 +135,21 @@ return [
     | careless misuse, not as proof of origin.
     |
     | `hostnames` defaults to the host of APP_URL. Set HCAPTCHA_HOSTNAMES to a
-    | comma-separated list for multi-domain installs. Setting it to an empty
-    | string disables the check, which is logged as an error once per process.
+    | comma-separated list for multi-domain installs. An application whose
+    | domains live in a database can instead bind a HostnameProvider, so a
+    | domain added at runtime is valid without an env edit or a deploy; this
+    | value then acts as the fallback if that provider returns nothing.
+    |
     | A missing or `not-provided` hostname passes with a warning unless
     | HCAPTCHA_HOSTNAMES_STRICT is true.
+    |
+    | `hostnames_required` decides what an empty allowlist means. True, the
+    | default, rejects the token: an allowlist that resolved to nothing is a
+    | misconfiguration, and treating it as "allow every hostname" would silently
+    | switch off the only check standing between a public sitekey and a token
+    | solved on somebody else's page. Set HCAPTCHA_HOSTNAMES_REQUIRED=false to
+    | get the old behaviour, where an empty list skips the check and logs once
+    | per process.
     |
     */
 
@@ -147,6 +158,8 @@ return [
     'hostnames' => env('HCAPTCHA_HOSTNAMES', parse_url((string) env('APP_URL'), PHP_URL_HOST)),
 
     'hostnames_strict' => (bool) env('HCAPTCHA_HOSTNAMES_STRICT', false),
+
+    'hostnames_required' => (bool) env('HCAPTCHA_HOSTNAMES_REQUIRED', true),
 
     'max_score' => env('HCAPTCHA_MAX_SCORE') !== null
         ? (float) env('HCAPTCHA_MAX_SCORE')

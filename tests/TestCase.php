@@ -144,6 +144,14 @@ class TestCase extends Orchestra
         config()->set('hcaptcha.sitekey', self::TEST_SITEKEY);
         config()->set('hcaptcha.secret', self::TEST_SECRET);
 
+        // A configured allowlist is the normal posture, and these are the two
+        // hostnames the siteverify fakes report: `localhost` from
+        // fakeSiteverify(), `example.test` from siteverifyBody(). Without this
+        // the suite would run with an empty allowlist, which now rejects every
+        // token -- tests about something else entirely would fail for that
+        // reason. A test that cares about the allowlist overrides it.
+        config()->set('hcaptcha.hostnames', ['localhost', 'example.test']);
+
         // Off by default, so a test that cares about the audit trail says so.
         config()->set('hcaptcha.logging.enabled', false);
     }

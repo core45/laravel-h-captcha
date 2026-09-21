@@ -4,6 +4,46 @@ All notable changes to `core45/laravel-h-captcha` are documented in this file, i
 [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## 2.1.0 - 2026-09-21
+
+### Added
+
+- `Core45\HCaptcha\Contracts\HostnameProvider`, a new interface an application can bind to supply the
+  hostname allowlist at runtime instead of through `HCAPTCHA_HOSTNAMES`. The motivating case is a
+  multi-tenant platform whose domains live in a database: adding a domain in an admin panel makes it
+  captcha-valid immediately, with no environment edit and no deploy. The default binding,
+  `Core45\HCaptcha\Support\ConfigHostnameProvider`, reads `hcaptcha.hostnames` and preserves existing
+  behaviour for every application that does not rebind it.
+- The provider is bound `scoped()`, matching `HttpVerifier`'s own lifetime, so an Octane worker cannot
+  serve a stale allowlist across requests. It is resolved fresh on every `verify()` call, never cached
+  by the package itself — a provider that wants to cache its own lookup (an Eloquent query, for
+  example) is responsible for that.
+- Resolution order per verification: the bound provider is asked first; if it returns `[]`, the
+  verifier falls back to `hcaptcha.hostnames`; if that is also empty, see the breaking change below.
+- `Core45\HCaptcha\Support\HostnameNormalizer`, extracted so every allowlist source — the provider,
+  config, `HCAPTCHA_HOSTNAMES` — normalizes identically (lowercased, trimmed, blank entries dropped).
+  Previously only the config value went through this normalization, so a provider-supplied hostname
+  saved with stray casing or whitespace could silently fail to match.
+- README: new "Supplying hostnames from your own source" section with a complete multi-tenant example
+  (an Eloquent-backed provider with caching) and the `HostnameProvider` interface.
+
+### Changed
+
+- **Breaking: an empty hostname allowlist is now rejected by default, not silently allowed.**
+  Previously, if the allowlist resolved to nothing — no `HCAPTCHA_HOSTNAMES` and an `APP_URL` that
+  `parse_url` could not read a host from (a bare host with no scheme, for example) — the hostname
+  check was skipped and every hostname was accepted, logged as a single `error` per process. Since a
+  sitekey is public, an attacker can solve a token on their own page and the check is the only thing
+  that catches it; silently disabling it was the worst possible default. An empty allowlist now
+  rejects the token instead, with `rejectedBy: hostname-allowlist-empty`, logged on every occurrence
+  rather than once.
+  New config key `hostnames_required` (env `HCAPTCHA_HOSTNAMES_REQUIRED`, default `true`) controls
+  this. Set it to `false` to restore the previous skip-and-accept behaviour.
+  **Upgrade note:** before deploying, confirm `HCAPTCHA_HOSTNAMES` is set or `APP_URL` includes a
+  scheme (`https://example.test`, not `example.test`). An install relying on the old silent-accept
+  fallback will start rejecting every captcha submission until one of those is fixed, or until
+  `HCAPTCHA_HOSTNAMES_REQUIRED=false` is set explicitly as a stopgap.
+
 ## 2.0.4 - 2026-09-20
 
 Documentation only. No runtime code changed.

@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace Core45\HCaptcha\Console;
 
+use Core45\HCaptcha\Contracts\HostnameProvider;
 use Core45\HCaptcha\HCaptchaManager;
 use Core45\HCaptcha\Models\HCaptchaVerification;
+use Core45\HCaptcha\Support\ConfigHostnameProvider;
 use Core45\HCaptcha\Support\Credentials;
+use Core45\HCaptcha\Support\HostnameNormalizer;
 use Illuminate\Console\Command;
 use Throwable;
 
@@ -152,27 +155,63 @@ class DoctorCommand extends Command
 
     private function checkHostnames(): int
     {
-        $configured = config('hcaptcha.hostnames');
+        $provider = app(HostnameProvider::class);
 
-        $hostnames = array_values(array_filter(array_map(
-            static fn (mixed $hostname): string => mb_strtolower(trim((string) $hostname)),
-            is_array($configured) ? $configured : (is_string($configured) ? explode(',', $configured) : []),
-        ), static fn (string $hostname): bool => $hostname !== ''));
+        // Naming the provider matters more than it looks: an application that
+        // feeds the allowlist from a database gets a list this command cannot
+        // predict from config alone, and an operator reading this output needs
+        // to know which source produced the hostnames below.
+        $this->components->info('Hostname source: '.$provider::class);
+
+        $hostnames = HostnameNormalizer::normalize($provider->hostnames());
+        $fromProvider = $hostnames !== [];
+
+        if (! $fromProvider) {
+            $hostnames = HostnameNormalizer::normalize(config('hcaptcha.hostnames'));
+
+            if ($provider::class !== ConfigHostnameProvider::class && $hostnames !== []) {
+                $this->components->warn(
+                    'The bound provider returned nothing, so hcaptcha.hostnames is being used as the fallback.'
+                );
+            }
+        }
+
+        $required = (bool) config('hcaptcha.hostnames_required', true);
 
         if ($hostnames === []) {
+            if ($required) {
+                $this->components->error(
+                    'Hostname allowlist resolves to nothing and hcaptcha.hostnames_required is on, '
+                    .'so every token is being rejected. Bind a HostnameProvider, set HCAPTCHA_HOSTNAMES, '
+                    .'or set an APP_URL that includes a scheme.'
+                );
+
+                // Unlike the opt-out below, this is not a policy choice: the
+                // site is rejecting its own visitors right now.
+                return 1;
+            }
+
             $this->components->warn(
-                'Hostname check inactive: hcaptcha.hostnames resolves to nothing. '
-                .'Set HCAPTCHA_HOSTNAMES, or an APP_URL that includes a scheme. '
+                'Hostname check inactive: the allowlist resolves to nothing and '
+                .'hcaptcha.hostnames_required is off, so a token solved on any hostname is accepted. '
                 .'The dashboard domain allowlist is the authoritative control either way.'
             );
 
-            // A warning, not a problem: it is a policy an operator may have
-            // switched off deliberately, and the dashboard allowlist is the
-            // control that actually binds a sitekey to a domain.
+            // A warning, not a problem: switching the check off is a policy an
+            // operator can hold deliberately, and the dashboard allowlist is
+            // the control that actually binds a sitekey to a domain.
             return 0;
         }
 
-        $this->components->info('Allowed hostnames: '.implode(', ', $hostnames));
+        // The count, not the list: a multi-tenant install can have hundreds,
+        // and a wall of domains buries the rest of this report.
+        $this->components->info(count($hostnames) > 10
+            ? sprintf('Allowed hostnames: %d, including %s', count($hostnames), implode(', ', array_slice($hostnames, 0, 5)))
+            : 'Allowed hostnames: '.implode(', ', $hostnames));
+
+        // Said plainly because it has been misread as a coverage check: this
+        // command cannot know which domains the application actually serves.
+        $this->components->info('This lists what the allowlist resolves to now; it cannot tell whether every domain you serve is in it.');
 
         if (config('hcaptcha.hostnames_strict')) {
             $this->components->warn('hostnames_strict is on: hCaptcha responses reporting no hostname are rejected, including during hCaptcha\'s own busy periods.');
