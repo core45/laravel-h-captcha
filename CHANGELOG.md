@@ -4,7 +4,7 @@ All notable changes to `core45/laravel-h-captcha` are documented in this file, i
 [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
-## 2.1.0 - 2026-09-21
+## 3.0.0 - 2026-09-22
 
 ### Added
 
