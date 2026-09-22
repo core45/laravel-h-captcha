@@ -477,6 +477,18 @@ Error codes follow [hCaptcha's siteverify table](https://docs.hcaptcha.com/#site
 
 2.0.0 changes behaviour in ten places — mostly correctness fixes around `VerificationResult::success` vs `accepted`, memoization scoping, and error codes. See [Upgrading from 1.x](docs/upgrading.md) for the full list before moving a 1.x install to 2.0.0.
 
+## Upgrading from 2.x
+
+3.0.0 changes one behaviour: an empty hostname allowlist now rejects the token instead of skipping the
+check. An install is affected only if it sets no `HCAPTCHA_HOSTNAMES` **and** has an `APP_URL` that
+`parse_url` cannot read a host from — a bare `example.test` with no scheme, for example. Such an install
+accepted every hostname before and will reject every submission after upgrading.
+
+Before deploying, set `HCAPTCHA_HOSTNAMES`, or give `APP_URL` a scheme (`https://example.test`). Running
+`php artisan hcaptcha:doctor` errors and exits `1` when the allowlist resolves to nothing while
+`hostnames_required` is on, so it will tell you whether you are affected.
+`HCAPTCHA_HOSTNAMES_REQUIRED=false` restores the old skip-and-accept behaviour as a stopgap. See the [changelog](CHANGELOG.md) for the reasoning.
+
 ## Audit trail
 
 An optional audit trail logs every verification attempt to `hcaptcha_verifications`, stores a SHA-256 hash of the token (never the raw token), and ships a pruning command. See [Audit trail](docs/audit-trail.md) for what's stored, the PII toggles, and how the migration is registered.
